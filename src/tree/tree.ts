@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { ReferenceItem, TagItem } from './tag-item';
+import { getPreviewChunks } from '../utils';
 
 export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceItem | TagItem> {
 
@@ -6,8 +8,9 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceIt
 	private readonly _onDidChange = new vscode.EventEmitter<ReferenceItem | undefined>();
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
+	private tags: TagItem[] = [];
 
-	constructor(private tags: TagItem[]) {
+	constructor() {
 	}
 
 	dispose(): void {
@@ -29,11 +32,22 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceIt
 		this._onDidChange.fire(undefined);
 	}
 
+	public renameTag(tag: TagItem, name: string) {
+		const newTag = new TagItem(name, tag.baseLocation, tag.references, tag.decoration);
+		this.tags = this.tags.map((t) => t === tag ? newTag : t);
+		this._onDidChange.fire(undefined);
+	}
+
+	public removeTag(tag: TagItem) {
+		this.tags = this.tags.filter((t) => t !== tag);
+		this._onDidChange.fire(undefined);
+	}
+
 	public changeTagDecoration(tag: TagItem, decoration: vscode.TextEditorDecorationType) {
 		tag.decoration.dispose();
 
 		const idx = this.tags.indexOf(tag);
-		this.tags[idx] = new TagItem(tag.name, tag.occurrences, decoration);
+		this.tags[idx] = new TagItem(tag.name, tag.baseLocation, tag.references, decoration);
 
 		this._onDidChange.fire(undefined);
 		return this.tags[idx];
@@ -47,6 +61,14 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceIt
 			result.description = true;
 			result.iconPath = vscode.ThemeIcon.File;
 			result.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
+			result.command = {
+				command: 'vscode.open',
+				title: vscode.l10n.t('Open Reference'),
+				arguments: [
+					element.baseLocation.uri,
+					<vscode.TextDocumentShowOptions>{ selection: element.baseLocation.range.with({ end: element.baseLocation.range.start }) }
+				]
+			};
 			return result;
 		} else {
 			// references
@@ -81,7 +103,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceIt
 			return this.tags;
 		}
 		if (element instanceof TagItem) {
-			return element.occurrences.map((o) => new ReferenceItem(o, element));
+			return element.references.map((o) => new ReferenceItem(o, element));
 		}
 		return undefined;
 	}
@@ -91,51 +113,4 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceIt
 	}
 }
 
-
-export class TagItem {
-	constructor(
-		readonly name: string,
-		readonly occurrences: vscode.Location[],
-		readonly decoration: vscode.TextEditorDecorationType,
-	) {}
-
-
-}
-
-export function getPreviewChunks(doc: vscode.TextDocument, range: vscode.Range, beforeLen: number = 8, trim: boolean = true) {
-	const previewStart = range.start.with({ character: Math.max(0, range.start.character - beforeLen) });
-	const wordRange = doc.getWordRangeAtPosition(previewStart);
-	let before = doc.getText(new vscode.Range(wordRange ? wordRange.start : previewStart, range.start));
-	const inside = doc.getText(range);
-	const previewEnd = range.end.translate(0, 331);
-	let after = doc.getText(new vscode.Range(range.end, previewEnd));
-	if (trim) {
-		before = before.replace(/^\s*/g, '');
-		after = after.replace(/\s*$/g, '');
-	}
-	return { before, inside, after };
-}
-
-export class ReferenceItem {
-
-	private _document: Thenable<vscode.TextDocument> | undefined;
-
-	constructor(
-		readonly location: vscode.Location,
-		readonly tag: TagItem,
-	) { }
-
-	async getDocument() {
-		if (!this._document) {
-			this._document = vscode.workspace.openTextDocument(this.location.uri);
-		}
-		return this._document;
-	}
-
-	async asCopyText() {
-		const doc = await this.getDocument();
-		const chunks = getPreviewChunks(doc, this.location.range, 21, false);
-		return `${this.location.range.start.line + 1}, ${this.location.range.start.character + 1}: ${chunks.before + chunks.inside + chunks.after}`;
-	}
-}
 
