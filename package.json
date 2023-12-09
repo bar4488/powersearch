@@ -12,6 +12,27 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cyber-explorer",
+          "title": "Cyber Explorer",
+          "icon": "resources/cyber.svg"
+        }
+      ]
+    },
+    "views": {
+      "cyber-explorer": [
+        {
+          "id": "cyber-explorer.tags",
+          "name": "Tags"
+        },
+        {
+          "id": "tag-groups",
+          "name": "Tag Groups"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "powersearch.colorSymbol",
@@ -20,8 +41,22 @@
       {
         "command": "powersearch.recolor",
         "title": "Recolor"
+      },
+      {
+        "command": "powersearch.cyberexplorer.chooseColor",
+        "title": "Choose Color",
+        "icon": "resources/color.svg"
       }
-    ]
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "powersearch.cyberexplorer.chooseColor",
+          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
+          "group": "inline"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
