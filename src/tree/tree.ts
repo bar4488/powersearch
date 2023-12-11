@@ -2,8 +2,9 @@ import * as vscode from 'vscode';
 import { ReferenceItem, TagItem, TreeNode } from './tag-item';
 import { createDecorationFromColor, getPreviewChunks } from '../utils';
 import { disposeDecorations, updateDecorations } from '../decorator';
+import { dumpTree, parseTree } from './tree_parser';
 
-export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
+export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
 	private readonly _listener: vscode.Disposable;
 	private readonly _onDidChange = new vscode.EventEmitter<undefined>();
@@ -15,13 +16,63 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
 		this._onDidChange.fire(undefined);
 	}
 
+	dropMimeTypes = ['application/powersearch'];
+	dragMimeTypes = ['application/powersearch'];
+
+	public async handleDrop(target: TreeNode | undefined, sources: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+		const transferItem = sources.get('application/powersearch');
+		if (!transferItem) {
+			return;
+		}
+		let idx = 0;
+		if (target !== undefined && target.type !== 'tag') {
+			if (target.parent === undefined) {
+				idx = this.children.indexOf(target);
+			}
+			else {
+				idx = target.parent.references.indexOf(target);
+			}
+			target = target.parent;
+		}
+		let targetTag: TagItem = target as TagItem;
+		let node = parseTree(transferItem.value, targetTag);
+		updateDecorations([node]);
+		if (target === undefined) {
+			this.children.splice(idx, 0, node);
+		}
+		else {
+			targetTag.references.splice(idx, 0, node);
+			targetTag.references = targetTag.references.filter((t) => t.type === 'tag').concat(targetTag.references.filter((t) => t.type === 'ref'));
+		}
+		this.updateTree();
+	}
+
+	public async handleDrag(source: TreeNode[], treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+		if (source.length !== 1 || source[0].type !== 'tag') {
+			return;
+		}
+		let node = source[0];
+		let sourceData = dumpTree(node);
+		const parent = node.parent;
+		const idx = parent ? parent.references.indexOf(node) : this.children.indexOf(node);
+		this.removeNode(node);
+		treeDataTransfer.set('application/powersearch', new vscode.DataTransferItem(sourceData));
+		token.onCancellationRequested((_) => {
+			// canceled, return everything to how it was.
+			if (parent) {
+				parent.references.splice(idx, 0, node);
+				updateDecorations([node]);
+			}
+		});
+	}
+
 	dispose(): void {
 		this._onDidChange.dispose();
 		this._listener.dispose();
 	}
 
 	private updateTree() {
-		
+
 		this._onDidChange.fire(undefined);
 	}
 
@@ -35,8 +86,13 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
 	}
 
 	public removeNode(node: TreeNode) {
-		this.children = this.children.filter((t) => t !== node);
 		disposeDecorations([node]);
+		if (!!node.parent) {
+			node.parent.references = node.parent.references.filter((t) => t !== node);
+		}
+		else {
+			this.children = this.children.filter((t) => t !== node);
+		}
 		this.updateTree();
 	}
 

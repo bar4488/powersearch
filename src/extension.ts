@@ -22,7 +22,9 @@ export function activate(context: vscode.ExtensionContext) {
 	console.log(vscode.Uri.parse(uri.toString()));
 
 	context.subscriptions.push(
-		vscode.window.registerTreeDataProvider('cyber-explorer.tags', tree),
+		// vscode.window.registerTreeDataProvider('cyber-explorer.tags', tree),
+		vscode.window.createTreeView('cyber-explorer.tags', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true, dragAndDropController: tree }),
+
 
 		vscode.window.onDidChangeActiveTextEditor(() => updateDecorations(tree.getNodes())),
 		vscode.commands.registerCommand('powersearch.colorSymbol', () => controller.onColorSymbol()),
