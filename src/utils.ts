@@ -1,14 +1,48 @@
 import * as vscode from 'vscode';
-import { TagItem } from './tree/tag-item';
+import { LocationData, PositionData, TagItem } from './tree/tag-item';
 
 export function setTagDecoration(tag: TagItem) {
     for (let editor of vscode.window.visibleTextEditors) {
-        let ranges = tag.references.filter((r) => r.uri.toString() === editor.document.uri.toString()).map((r) => r.range);
+        let ranges = tag.references.filter((r) => r.location.uri.toString() === editor.document.uri.toString()).map((r) => r.location.range);
         editor.setDecorations(tag.decoration, ranges);
     }
 }
 
-export function createDecorationFromColor(color: string): vscode.TextEditorDecorationType {
+export function positionFrom(positionData: PositionData) {
+    return new vscode.Position(positionData.line, positionData.character);
+}
+
+export function locationFrom(locationData: LocationData | undefined): vscode.Location | undefined {
+    if (!locationData ) {
+        return undefined;
+    }
+    let range = new vscode.Range(positionFrom(locationData.range.start), positionFrom(locationData.range.end));
+    return new vscode.Location(vscode.Uri.parse(locationData.uriString), range);
+}
+
+export function locationDataFrom(location: vscode.Location | undefined): LocationData | undefined {
+    if (!location ) {
+        return undefined;
+    }
+    return {
+        range: {
+            start: {
+                line: location.range.start.line,
+                character: location.range.start.character,
+            },
+            end: {
+                line: location.range.end.line,
+                character: location.range.end.character,
+            }
+        },
+        uriString: location.uri.toString()
+    };
+}
+
+export function createDecorationFromColor(color: string | undefined): vscode.TextEditorDecorationType | undefined {
+    if (!color) {
+        return undefined;
+    } 
     let type: vscode.DecorationRenderOptions = {
         "overviewRulerColor": color,
         "backgroundColor": color,

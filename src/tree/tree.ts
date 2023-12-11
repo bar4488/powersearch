@@ -1,16 +1,18 @@
 import * as vscode from 'vscode';
-import { ReferenceItem, TagItem } from './tag-item';
-import { getPreviewChunks } from '../utils';
+import { ReferenceItem, TagItem, TreeNode } from './tag-item';
+import { createDecorationFromColor, getPreviewChunks } from '../utils';
+import { disposeDecorations, updateDecorations } from '../decorator';
 
-export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceItem | TagItem> {
+export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
 
 	private readonly _listener: vscode.Disposable;
-	private readonly _onDidChange = new vscode.EventEmitter<ReferenceItem | undefined>();
+	private readonly _onDidChange = new vscode.EventEmitter<undefined>();
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
-	private tags: TagItem[] = [];
 
-	constructor() {
+	constructor(private children: TreeNode[]) {
+		updateDecorations(children);
+		this._onDidChange.fire(undefined);
 	}
 
 	dispose(): void {
@@ -18,43 +20,28 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceIt
 		this._listener.dispose();
 	}
 
-	public setTags(tags: TagItem[]) {
-		this.tags = tags;
+	private updateTree() {
+		
 		this._onDidChange.fire(undefined);
 	}
 
-	public getTags() {
-		return this.tags;
+	public getNodes() {
+		return this.children;
 	}
 
-	public addTag(tag: TagItem) {
-		this.tags.push(tag);
-		this._onDidChange.fire(undefined);
+	public addNode(node: TreeNode) {
+		this.children.push(node);
+		this.updateTree();
 	}
 
-	public renameTag(tag: TagItem, name: string) {
-		const newTag = new TagItem(name, tag.baseLocation, tag.references, tag.decoration);
-		this.tags = this.tags.map((t) => t === tag ? newTag : t);
-		this._onDidChange.fire(undefined);
+	public removeNode(node: TreeNode) {
+		this.children = this.children.filter((t) => t !== node);
+		disposeDecorations([node]);
+		this.updateTree();
 	}
 
-	public removeTag(tag: TagItem) {
-		this.tags = this.tags.filter((t) => t !== tag);
-		this._onDidChange.fire(undefined);
-	}
-
-	public changeTagDecoration(tag: TagItem, decoration: vscode.TextEditorDecorationType) {
-		tag.decoration.dispose();
-
-		const idx = this.tags.indexOf(tag);
-		this.tags[idx] = new TagItem(tag.name, tag.baseLocation, tag.references, decoration);
-
-		this._onDidChange.fire(undefined);
-		return this.tags[idx];
-	}
-
-	async getTreeItem(element: TagItem | ReferenceItem) {
-		if (element instanceof TagItem) {
+	async getTreeItem(element: TreeNode) {
+		if (element.type === 'tag') {
 			// files
 			const result = new vscode.TreeItem(element.name);
 			result.contextValue = 'visible-tag-item';
@@ -65,15 +52,15 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceIt
 				command: 'vscode.open',
 				title: vscode.l10n.t('Open Reference'),
 				arguments: [
-					element.baseLocation.uri,
-					<vscode.TextDocumentShowOptions>{ selection: element.baseLocation.range.with({ end: element.baseLocation.range.start }) }
+					element.location.uri,
+					<vscode.TextDocumentShowOptions>{ selection: element.location.range.with({ end: element.location.range.start }) }
 				]
 			};
 			return result;
 		} else {
 			// references
 			const { range } = element.location;
-			const doc = await element.getDocument();
+			const doc = await vscode.workspace.openTextDocument(element.location.uri);
 			const { before, inside, after } = getPreviewChunks(doc, range);
 
 			const label: vscode.TreeItemLabel = {
@@ -98,18 +85,37 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<ReferenceIt
 		}
 	}
 
-	async getChildren(element?: ReferenceItem | TagItem) {
-		if (element === undefined) {
-			return this.tags;
+	public setTagColor(tag: TagItem, color: string) {
+		if (!!tag.decoration) {
+			tag.decoration.dispose();
+			tag.decoration = undefined;
+			tag.color = undefined;
 		}
-		if (element instanceof TagItem) {
-			return element.references.map((o) => new ReferenceItem(o, element));
+		if (color === undefined) {
+			return;
+		}
+		tag.decoration = createDecorationFromColor(color);
+		tag.color = color;
+		updateDecorations([tag]);
+		this.updateTree();
+	}
+
+	public updateNode(tag: TagItem) {
+		this.updateTree();
+	}
+
+	async getChildren(element?: TreeNode) {
+		if (element === undefined) {
+			return this.children;
+		}
+		if (element.type === 'tag') {
+			return element.references;
 		}
 		return undefined;
 	}
 
-	getParent(element: ReferenceItem | TagItem) {
-		return element instanceof ReferenceItem ? element.tag : undefined;
+	getParent(element: TreeNode) {
+		return element.parent;
 	}
 }
 

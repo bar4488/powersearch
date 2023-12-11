@@ -1,34 +1,76 @@
 import * as vscode from 'vscode';
-import { getPreviewChunks } from '../utils';
+import { createDecorationFromColor, getPreviewChunks } from '../utils';
 
-export class TagItem {
-	constructor(
-		readonly name: string,
-        readonly baseLocation: vscode.Location,
-		readonly references: vscode.Location[],
-		readonly decoration: vscode.TextEditorDecorationType,
-	) {}
+export type TreeNode = TagItem | ReferenceItem;
+export type TreeData = TagData | ReferenceData;
+
+export interface TagData {
+	type: 'tag',
+	name: string,
+	location: LocationData,
+	references: (ReferenceData | TagData)[],
+	color?: string,
 }
 
-export class ReferenceItem {
+export interface ReferenceData {
+	type: 'ref',
+	location: LocationData,
+}
 
-	private _document: Thenable<vscode.TextDocument> | undefined;
+export interface TagItem {
+	type: 'tag',
+	name: string,
+	references: TreeNode[],
+	location?: vscode.Location,
+	color?: string, 
 
-	constructor(
-		readonly location: vscode.Location,
-		readonly tag: TagItem,
-	) { }
+	decoration?: vscode.TextEditorDecorationType
+	parent?: TagItem
+}
 
-	async getDocument() {
-		if (!this._document) {
-			this._document = vscode.workspace.openTextDocument(this.location.uri);
-		}
-		return this._document;
+export interface ReferenceItem {
+	type: 'ref',
+	location: vscode.Location,
+	parent?: TagItem
+}
+
+export interface PositionData {
+	line: number,
+	character: number,
+}
+
+export interface LocationData {
+	uriString: string,
+	range: {
+		start: PositionData,
+		end: PositionData
 	}
+}
 
-	async asCopyText() {
-		const doc = await this.getDocument();
-		const chunks = getPreviewChunks(doc, this.location.range, 21, false);
-		return `${this.location.range.start.line + 1}, ${this.location.range.start.character + 1}: ${chunks.before + chunks.inside + chunks.after}`;
-	}
+export function createTagData(data: Omit<TagData, 'type'>): TagData {
+	return {
+		type: 'tag',
+		...data
+	};
+}
+
+export function createTagItem(data: Omit<TagItem, 'type'>): TagItem {
+	return {
+		type: 'tag',
+		...data
+	};
+}
+
+export function createReferenceData(data: Omit<ReferenceData, 'type'>): ReferenceData {
+	return {
+		type: 'ref',
+		...data
+	};
+}
+
+export function createReferenceItem(data: Omit<ReferenceItem, 'type'>): ReferenceItem {
+	return {
+		type: 'ref',
+		...data
+	};
 }

@@ -43,19 +43,23 @@
         "title": "Recolor"
       },
       {
+        "command": "powersearch.saveTree",
+        "title": "Powersearch: Save Refs"
+      },
+      {
         "command": "powersearch.chooseTagColor",
         "title": "Choose Color",
         "icon": "resources/color.svg"
       },
       {
-        "command": "powersearch.removeTag",
-        "title": "Remove Tag",
-        "icon": "resources/bin.svg"
-      },
-      {
         "command": "powersearch.renameTag",
         "title": "Rename Tag",
         "icon": "resources/edit.svg"
+      },
+      {
+        "command": "powersearch.removeTag",
+        "title": "Remove Tag",
+        "icon": "resources/bin.svg"
       }
     ],
     "menus": {
@@ -66,12 +70,12 @@
           "group": "inline"
         },
         {
-          "command": "powersearch.removeTag",
+          "command": "powersearch.renameTag",
           "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
           "group": "inline"
         },
         {
-          "command": "powersearch.renameTag",
+          "command": "powersearch.removeTag",
           "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
           "group": "inline"
         }
