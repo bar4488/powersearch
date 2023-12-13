@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { ReferenceItem, TagItem, TreeNode } from './tag-item';
-import { createDecorationFromColor, getPreviewChunks } from '../utils';
+import { ReferenceItem, RootItem, TagItem, TreeNode } from './tag-item';
+import { createDecorationFromColor, findIndices, getPreviewChunks } from '../utils';
 import { disposeDecorations, updateDecorations } from '../decorator';
 import { dumpTree, parseTree } from './tree_parser';
 
@@ -10,8 +10,13 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 	private readonly _onDidChange = new vscode.EventEmitter<undefined>();
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
+	private root: RootItem;
 
-	constructor(private children: TreeNode[]) {
+	constructor(children: TreeNode[]) {
+		this.root = {type: 'root', references: children};
+		for (var child of children) {
+			child.parent = this.root;
+		}
 		updateDecorations(children);
 		this._onDidChange.fire(undefined);
 	}
@@ -24,46 +29,55 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		if (!transferItem) {
 			return;
 		}
-		let idx = 0;
-		if (target !== undefined && target.type !== 'tag') {
-			if (target.parent === undefined) {
-				idx = this.children.indexOf(target);
+		const indicesList: number[][] = transferItem.value;
+		if (indicesList.length === 0) {
+			return;
+		}
+		// build tree
+		let nodes: TreeNode[] = [];
+		for (var nodeIndices of transferItem.value) {
+			let curr: TreeNode = null;
+			let childs = this.root.references;
+			for (var idx of nodeIndices) {
+				curr = childs[idx];
+				childs = (curr as TagItem).references;
 			}
-			else {
-				idx = target.parent.references.indexOf(target);
-			}
-			target = target.parent;
+			nodes.push(curr);
 		}
-		let targetTag: TagItem = target as TagItem;
-		let node = parseTree(transferItem.value, targetTag);
-		updateDecorations([node]);
-		if (target === undefined) {
-			this.children.splice(idx, 0, node);
+		nodes[0].parent.references = nodes[0].parent.references.filter((n) => !nodes.includes(n));
+
+		// if target is reference, take parent
+		let targetNode = target ?? this.root;
+		targetNode = targetNode.type === 'ref' ? targetNode.parent : targetNode;
+
+		targetNode.references.push(...nodes);
+		for (let node of nodes) {
+			node.parent = targetNode;
 		}
-		else {
-			targetTag.references.splice(idx, 0, node);
-			targetTag.references = targetTag.references.filter((t) => t.type === 'tag').concat(targetTag.references.filter((t) => t.type === 'ref'));
-		}
+		updateDecorations(this.root.references);
 		this.updateTree();
 	}
 
 	public async handleDrag(source: TreeNode[], treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
-		if (source.length !== 1 || source[0].type !== 'tag') {
+		if (source.length === 0) {
 			return;
 		}
-		let node = source[0];
-		let sourceData = dumpTree(node);
-		const parent = node.parent;
-		const idx = parent ? parent.references.indexOf(node) : this.children.indexOf(node);
-		this.removeNode(node);
-		treeDataTransfer.set('application/powersearch', new vscode.DataTransferItem(sourceData));
-		token.onCancellationRequested((_) => {
-			// canceled, return everything to how it was.
-			if (parent) {
-				parent.references.splice(idx, 0, node);
-				updateDecorations([node]);
+		// allow only drags where all nodes have the same parent
+		const p = source[0].parent;
+		if (source.filter((n) => n.parent !== p).length !== 0) {
+			return;
+		}
+
+		// calculate indices
+		let sourceIndices = [];
+		for (var s of source) {
+			let indices = findIndices(s);
+			if (indices === undefined) {
+				continue;
 			}
-		});
+			sourceIndices.push(indices);
+		}
+		treeDataTransfer.set('application/powersearch', new vscode.DataTransferItem(sourceIndices));
 	}
 
 	dispose(): void {
@@ -77,11 +91,11 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 	}
 
 	public getNodes() {
-		return this.children;
+		return this.root.references;
 	}
 
 	public addNode(node: TreeNode) {
-		this.children.push(node);
+		this.root.references.push(node);
 		this.updateTree();
 	}
 
@@ -91,7 +105,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 			node.parent.references = node.parent.references.filter((t) => t !== node);
 		}
 		else {
-			this.children = this.children.filter((t) => t !== node);
+			this.root.references = this.root.references.filter((t) => t !== node);
 		}
 		this.updateTree();
 	}
@@ -162,7 +176,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 
 	async getChildren(element?: TreeNode) {
 		if (element === undefined) {
-			return this.children;
+			return this.root.references;
 		}
 		if (element.type === 'tag') {
 			return element.references;
@@ -171,7 +185,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 	}
 
 	getParent(element: TreeNode) {
-		return element.parent;
+		return element.parent.type === 'root' ? undefined : element.parent;
 	}
 }
 

@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
-import { LocationData, PositionData, TagItem } from './tree/tag-item';
+import { LocationData, PositionData, RootItem, TagItem, TreeNode, TreeNodeOrRoot } from './tree/tag-item';
 
 export function setTagDecoration(tag: TagItem) {
+    let references = tag.references.filter((n) => n.type === 'ref');
     for (let editor of vscode.window.visibleTextEditors) {
-        let ranges = tag.references.filter((r) => r.location.uri.toString() === editor.document.uri.toString()).map((r) => r.location.range);
+        let ranges = references.filter((r) => r.location.uri.toString() === editor.document.uri.toString()).map((r) => r.location.range);
         editor.setDecorations(tag.decoration, ranges);
     }
 }
@@ -13,15 +14,29 @@ export function positionFrom(positionData: PositionData) {
 }
 
 export function locationFrom(locationData: LocationData | undefined): vscode.Location | undefined {
-    if (!locationData ) {
+    if (!locationData) {
         return undefined;
     }
     let range = new vscode.Range(positionFrom(locationData.range.start), positionFrom(locationData.range.end));
     return new vscode.Location(vscode.Uri.parse(locationData.uriString), range);
 }
 
+export function findIndices(node: TreeNode): number[] | undefined {
+    let indices = [];
+    let curr: TreeNode | RootItem = node;
+    while (curr.type !== 'root') {
+        const idx = curr.parent.references.indexOf(curr);
+        if (idx === -1) {
+            return undefined;
+        }
+        indices.push(idx);
+        curr = curr.parent;
+    }
+    return indices.reverse();
+}
+
 export function locationDataFrom(location: vscode.Location | undefined): LocationData | undefined {
-    if (!location ) {
+    if (!location) {
         return undefined;
     }
     return {
@@ -42,7 +57,7 @@ export function locationDataFrom(location: vscode.Location | undefined): Locatio
 export function createDecorationFromColor(color: string | undefined): vscode.TextEditorDecorationType | undefined {
     if (!color) {
         return undefined;
-    } 
+    }
     let type: vscode.DecorationRenderOptions = {
         "overviewRulerColor": color,
         "backgroundColor": color,
@@ -57,15 +72,15 @@ export function isValidColor(color: string): boolean {
 }
 
 export function getPreviewChunks(doc: vscode.TextDocument, range: vscode.Range, beforeLen: number = 8, trim: boolean = true) {
-	const previewStart = range.start.with({ character: Math.max(0, range.start.character - beforeLen) });
-	const wordRange = doc.getWordRangeAtPosition(previewStart);
-	let before = doc.getText(new vscode.Range(wordRange ? wordRange.start : previewStart, range.start));
-	const inside = doc.getText(range);
-	const previewEnd = range.end.translate(0, 331);
-	let after = doc.getText(new vscode.Range(range.end, previewEnd));
-	if (trim) {
-		before = before.replace(/^\s*/g, '');
-		after = after.replace(/\s*$/g, '');
-	}
-	return { before, inside, after };
+    const previewStart = range.start.with({ character: Math.max(0, range.start.character - beforeLen) });
+    const wordRange = doc.getWordRangeAtPosition(previewStart);
+    let before = doc.getText(new vscode.Range(wordRange ? wordRange.start : previewStart, range.start));
+    const inside = doc.getText(range);
+    const previewEnd = range.end.translate(0, 331);
+    let after = doc.getText(new vscode.Range(range.end, previewEnd));
+    if (trim) {
+        before = before.replace(/^\s*/g, '');
+        after = after.replace(/\s*$/g, '');
+    }
+    return { before, inside, after };
 }

@@ -55,6 +55,7 @@ export class TreeController {
         }
         if (choice === 'None') {
             this.tree.setTagColor(tag, undefined);
+            return;
         }
 
         const idx = defaultColors.map((o) => o.name).indexOf(choice);

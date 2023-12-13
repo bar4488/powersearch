@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
 import { createDecorationFromColor, getPreviewChunks } from '../utils';
 
+export type ParentNode = TagItem | RootItem;
+export type TreeNodeOrRoot = TreeNode | RootItem;
 export type TreeNode = TagItem | ReferenceItem;
 export type TreeData = TagData | ReferenceData;
+
+export interface RootItem {
+	type: 'root',
+	references: TreeNode[]
+}
 
 export interface TagData {
 	type: 'tag',
@@ -25,13 +32,13 @@ export interface TagItem {
 	color?: string, 
 
 	decoration?: vscode.TextEditorDecorationType
-	parent?: TagItem
+	parent?: ParentNode
 }
 
 export interface ReferenceItem {
 	type: 'ref',
 	location: vscode.Location,
-	parent?: TagItem
+	parent?: ParentNode
 }
 
 export interface PositionData {

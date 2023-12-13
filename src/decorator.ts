@@ -26,7 +26,9 @@ const defaultColors = [
 export function updateDecorations(nodes: TreeNode[]) {
     for (let node of nodes) {
         if (node.type === 'tag') {
-            setTagDecoration(node);
+            if (node.color !== undefined) {
+                setTagDecoration(node);
+            }
             updateDecorations(node.references);
         }
     }
