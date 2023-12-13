@@ -44,11 +44,16 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 			}
 			nodes.push(curr);
 		}
-		nodes[0].parent.references = nodes[0].parent.references.filter((n) => !nodes.includes(n));
 
 		// if target is reference, take parent
 		let targetNode = target ?? this.root;
 		targetNode = targetNode.type === 'ref' ? targetNode.parent : targetNode;
+
+		if (targetNode === nodes[0].parent) {
+			// we do not want to remove anything
+			return;
+		}
+		nodes[0].parent.references = nodes[0].parent.references.filter((n) => !nodes.includes(n));
 
 		targetNode.references.push(...nodes);
 		for (let node of nodes) {
@@ -86,7 +91,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 	}
 
 	private updateTree() {
-
+		vscode.commands.executeCommand("powersearch.saveTree");
 		this._onDidChange.fire(undefined);
 	}
 
@@ -116,7 +121,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 			const result = new vscode.TreeItem(element.name);
 			result.contextValue = 'visible-tag-item';
 			result.description = true;
-			result.iconPath = vscode.ThemeIcon.File;
+			result.iconPath = vscode.ThemeIcon.Folder;
 			result.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
 			result.command = {
 				command: 'vscode.open',
