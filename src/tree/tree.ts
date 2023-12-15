@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ReferenceItem, RootItem, TagItem, TreeNode } from './tag-item';
-import { createDecorationFromColor, findIndices, getPreviewChunks } from '../utils';
+import { createDecorationFromColor, findIndices, getPreviewChunks, setTagDecoration } from '../utils';
 import { disposeDecorations, updateDecorations } from '../decorator';
 import { dumpTree, parseTree } from './tree_parser';
 
@@ -100,7 +100,12 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 	}
 
 	public addNode(node: TreeNode) {
+		node.parent = this.root;
 		this.root.references.push(node);
+
+		if (node.type === 'tag') {
+			setTagDecoration(node);
+		}
 		this.updateTree();
 	}
 

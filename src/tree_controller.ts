@@ -43,8 +43,6 @@ export class TreeController {
             });
             tag.references.forEach((t) => t.parent = tag);
             this.tree.addNode(tag);
-
-            setTagDecoration(tag);
         }
     }
 
