@@ -45,6 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand("powersearch.chooseTagColor", async (tag, _) => controller.onChangeTagColor(tag)),
 		vscode.commands.registerCommand("powersearch.renameTag", async (tag, _) => controller.onRenameTag(tag)),
 		vscode.commands.registerCommand("powersearch.removeTag", async (tag, _) => controller.onRemoveTag(tag)),
+		vscode.commands.registerCommand("powersearch.addTag", async (tag, _) => controller.onAddTag(tag)),
 		vscode.commands.registerCommand("powersearch.removeData", async (tag, _) => deleteTreeItems(context)),
 		vscode.commands.registerCommand("powersearch.selectTag", (tag, _) => controller.onSelectTag(tag)),
 		vscode.commands.registerCommand("powersearch.saveTree", async () => {

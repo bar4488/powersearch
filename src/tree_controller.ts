@@ -110,4 +110,14 @@ export class TreeController {
         }
         this.tree.removeNode(tag);
     }
+
+    public async onAddTag(tag: TagItem) {
+        let newName = await vscode.window.showInputBox({ prompt: "Enter tag name" });
+        if (!newName) {
+            return;
+        }
+        else {
+            this.tree.addNode(createTagItem({ name: newName, references: [] }), tag);
+        }
+    }
 }

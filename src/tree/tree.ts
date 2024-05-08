@@ -98,9 +98,12 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		return this.root.references;
 	}
 
-	public addNode(node: TreeNode) {
-		node.parent = this.root;
-		this.root.references.push(node);
+	public addNode(node: TreeNode, parent: ParentNode = undefined) {
+		if (parent === undefined) {
+			parent = this.root;
+		}
+		node.parent = parent;
+		parent.references.push(node);
 
 		if (node.type === 'tag') {
 			setTagDecoration(node);

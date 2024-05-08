@@ -39,6 +39,14 @@
         "title": "Powersearch: Color Symbol"
       },
       {
+        "command": "powersearch.addTag",
+        "title": "Powersearch: Add a new tag",
+        "icon": {
+          "light": "resources/light/refresh.svg",
+          "dark": "resources/add-folder.svg"
+        }
+      },
+      {
         "command": "powersearch.colorSelection",
         "title": "PowerSearch: Color Selection"
       },
@@ -95,6 +103,18 @@
           "command": "powersearch.removeTag",
           "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item || viewItem == tag-occurrence-item",
           "group": "inline"
+        },
+        {
+          "command": "powersearch.addTag",
+          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
+          "group": "inline"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "powersearch.addTag",
+          "when": "view == cyber-explorer.tags",
+          "group": "navigation"
         }
       ]
     }
