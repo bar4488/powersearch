@@ -46,6 +46,24 @@ export class TreeController {
         }
     }
 
+    public async onColorSelection() {
+        let doc = vscode.window.activeTextEditor?.document;
+
+        const basePosition = vscode.window.activeTextEditor?.selection.anchor;
+        const selection = vscode.window.activeTextEditor?.selection;
+        const filename = vscode.workspace.asRelativePath(doc.fileName);
+        this.tree.addReferenceToSelectedTag(createReferenceItem({location: new vscode.Location(doc.uri, selection)}));
+    }
+
+    public async onColorLine() {
+        let doc = vscode.window.activeTextEditor?.document;
+
+        const basePosition = vscode.window.activeTextEditor?.selection.anchor;
+        const lineRange = new vscode.Range(basePosition.with(undefined, 0), basePosition.translate(0, 1000));
+        const filename = vscode.workspace.asRelativePath(doc.fileName);
+        this.tree.addReferenceToSelectedTag(createReferenceItem({location: new vscode.Location(doc.uri, lineRange)}));
+    }
+
     public async onChangeTagColor(tag: TagItem) {
         let choice = await vscode.window.showQuickPick([...defaultColors.map((o) => o.name), 'Custom', 'None']);
         if (!choice) {
@@ -82,8 +100,14 @@ export class TreeController {
         this.tree.updateNode(tag);
     }
 
+    public async onSelectTag(tag: TagItem) {
+        this.tree.selectTag(tag);
+    }
+
     public onRemoveTag(tag: TagItem) {
-        tag.decoration.dispose();
+        if (tag.decoration !== undefined) {
+            tag.decoration.dispose();
+        }
         this.tree.removeNode(tag);
     }
 }

@@ -36,11 +36,23 @@
     "commands": [
       {
         "command": "powersearch.colorSymbol",
-        "title": "Color Symbol"
+        "title": "Powersearch: Color Symbol"
+      },
+      {
+        "command": "powersearch.colorSelection",
+        "title": "PowerSearch: Color Selection"
+      },
+      {
+        "command": "powersearch.colorLine",
+        "title": "Powersearch: Color Line"
+      },
+      {
+        "command": "powersearch.removeData",
+        "title": "Powersearch: Remove Data"
       },
       {
         "command": "powersearch.recolor",
-        "title": "Recolor"
+        "title": "Powersearch: Recolor"
       },
       {
         "command": "powersearch.saveTree",
@@ -58,6 +70,11 @@
       },
       {
         "command": "powersearch.removeTag",
+        "title": "Remove Tag",
+        "icon": "resources/bin.svg"
+      },
+      {
+        "command": "powersearch.selectTag",
         "title": "Remove Tag",
         "icon": "resources/bin.svg"
       }

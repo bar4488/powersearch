@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { ReferenceItem, RootItem, TagItem, TreeNode } from './tag-item';
-import { createDecorationFromColor, findIndices, getPreviewChunks, setTagDecoration } from '../utils';
+import { ReferenceItem, RootItem, TagItem, TreeNode, createTagItem } from './tag-item';
+import { createDecorationFromColor, nodeToIndices, getPreviewChunks, setTagDecoration, indicesToNode } from '../utils';
 import { disposeDecorations, updateDecorations } from '../decorator';
 import { dumpTree, parseTree } from './tree_parser';
 
@@ -11,9 +11,13 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
 	private root: RootItem;
+	private selectedTag: TagItem;
 
 	constructor(children: TreeNode[]) {
-		this.root = {type: 'root', references: children};
+		this.root = { type: 'root', references: children };
+		this.selectedTag = createTagItem({
+			name: "Default", references: [],
+		});
 		for (var child of children) {
 			child.parent = this.root;
 		}
@@ -36,13 +40,8 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		// build tree
 		let nodes: TreeNode[] = [];
 		for (var nodeIndices of transferItem.value) {
-			let curr: TreeNode = null;
-			let childs = this.root.references;
-			for (var idx of nodeIndices) {
-				curr = childs[idx];
-				childs = (curr as TagItem).references;
-			}
-			nodes.push(curr);
+			const node = indicesToNode(nodeIndices, this.root);
+			nodes.push(node);
 		}
 
 		// if target is reference, take parent
@@ -76,7 +75,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		// calculate indices
 		let sourceIndices = [];
 		for (var s of source) {
-			let indices = findIndices(s);
+			let indices = nodeToIndices(s);
 			if (indices === undefined) {
 				continue;
 			}
@@ -109,6 +108,18 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		this.updateTree();
 	}
 
+	public addReferenceToSelectedTag(ref: ReferenceItem) {
+		ref.parent = this.selectedTag;
+		this.selectedTag.expanded = true;
+		this.selectedTag.references.push(ref);
+		if (this.selectedTag.parent === undefined) {
+			this.addNode(this.selectedTag);
+			return;
+		}
+		updateDecorations([this.selectedTag]);
+		this.updateTree();
+	}
+
 	public removeNode(node: TreeNode) {
 		disposeDecorations([node]);
 		if (!!node.parent) {
@@ -120,6 +131,12 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		this.updateTree();
 	}
 
+	public selectTag(tag: TagItem) {
+		this.selectedTag = tag;
+		this.selectedTag.expanded = true;
+		this.updateTree();
+	}
+
 	async getTreeItem(element: TreeNode) {
 		if (element.type === 'tag') {
 			// files
@@ -127,15 +144,16 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 			result.contextValue = 'visible-tag-item';
 			result.description = true;
 			result.iconPath = vscode.ThemeIcon.Folder;
-			result.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
-			result.command = {
-				command: 'vscode.open',
-				title: vscode.l10n.t('Open Reference'),
-				arguments: [
-					element.location.uri,
-					<vscode.TextDocumentShowOptions>{ selection: element.location.range.with({ end: element.location.range.start }) }
-				]
-			};
+			result.collapsibleState = element.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+			if (element.location) {
+				result.command = {
+					command: 'powersearch.selectTag',
+					title: vscode.l10n.t('Open Reference'),
+					arguments: [
+						element
+					]
+				};
+			}
 			return result;
 		} else {
 			// references

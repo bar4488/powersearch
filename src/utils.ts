@@ -2,7 +2,13 @@ import * as vscode from 'vscode';
 import { LocationData, PositionData, RootItem, TagItem, TreeNode, TreeNodeOrRoot } from './tree/tag-item';
 
 export function setTagDecoration(tag: TagItem) {
+    if (tag.color === undefined) {
+        return;
+    }
     let references = tag.references.filter((n) => n.type === 'ref');
+    if (tag.decoration === undefined) {
+        tag.decoration = createDecorationFromColor(tag.color);
+    }
     for (let editor of vscode.window.visibleTextEditors) {
         let ranges = references.filter((r) => r.location.uri.toString() === editor.document.uri.toString()).map((r) => r.location.range);
         editor.setDecorations(tag.decoration, ranges);
@@ -21,7 +27,7 @@ export function locationFrom(locationData: LocationData | undefined): vscode.Loc
     return new vscode.Location(vscode.Uri.parse(locationData.uriString), range);
 }
 
-export function findIndices(node: TreeNode): number[] | undefined {
+export function nodeToIndices(node: TreeNode): number[] | undefined {
     let indices = [];
     let curr: TreeNode | RootItem = node;
     while (curr.type !== 'root') {
@@ -33,6 +39,16 @@ export function findIndices(node: TreeNode): number[] | undefined {
         curr = curr.parent;
     }
     return indices.reverse();
+}
+
+export function indicesToNode(indices: number[], root): TreeNode {
+    let curr: TreeNode = null;
+    let childs = root.references;
+    for (var idx of indices) {
+        curr = childs[idx];
+        childs = (curr as TagItem).references;
+    }
+    return curr;
 }
 
 export function locationDataFrom(location: vscode.Location | undefined): LocationData | undefined {

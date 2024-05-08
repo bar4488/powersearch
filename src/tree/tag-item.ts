@@ -31,6 +31,7 @@ export interface TagItem {
 	location?: vscode.Location,
 	color?: string, 
 
+	expanded?: boolean,
 	decoration?: vscode.TextEditorDecorationType
 	parent?: ParentNode
 }
