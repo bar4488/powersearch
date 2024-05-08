@@ -93,7 +93,7 @@
         },
         {
           "command": "powersearch.removeTag",
-          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
+          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item || viewItem == tag-occurrence-item",
           "group": "inline"
         }
       ]
