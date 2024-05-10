@@ -26,12 +26,8 @@
         {
           "id": "cyber-explorer.tags",
           "name": "Tags"
-        },
-        {
-          "id": "tag-groups",
-          "name": "Tag Groups"
         }
-      ]
+       ]
     },
     "commands": [
       {
@@ -92,6 +88,12 @@
       }
     ],
     "menus": {
+      "webview/context": [
+        {
+          "command": "powersearch.addTag",
+          "when": "view == cyber-explorer.tags"
+        }
+      ],
       "view/item/context": [
         {
           "command": "powersearch.chooseTagColor",
@@ -115,7 +117,7 @@
         },
         {
           "command": "powersearch.addTag",
-          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item"
+          "when": "viewItem != tag-occurrence-item"
         }
       ],
       "view/title": [

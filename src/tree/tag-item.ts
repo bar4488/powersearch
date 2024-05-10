@@ -55,13 +55,6 @@ export interface LocationData {
 	}
 }
 
-export function createTagData(data: Omit<TagData, 'type'>): TagData {
-	return {
-		type: 'tag',
-		...data
-	};
-}
-
 export function createTagItem(data: Omit<TagItem, 'type'>): TagItem {
 	return {
 		type: 'tag',
