@@ -39,6 +39,10 @@
         "title": "Powersearch: Color Symbol"
       },
       {
+        "command": "powersearch.addSearchResults",
+        "title": "Powersearch: Add Search Results to Tags"
+      },
+      {
         "command": "powersearch.addTag",
         "title": "Powersearch: Add a new tag",
         "icon": {
@@ -108,6 +112,10 @@
           "command": "powersearch.addTag",
           "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
           "group": "inline"
+        },
+        {
+          "command": "powersearch.addTag",
+          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item"
         }
       ],
       "view/title": [
