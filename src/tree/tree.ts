@@ -12,6 +12,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 	readonly onDidChangeTreeData = this._onDidChange.event;
 	private root: RootItem;
 	private selectedTag: TagItem;
+	private selectedDecoration: vscode.TextEditorDecorationType;
 
 	constructor(children: TreeNode[]) {
 		this.root = { type: 'root', references: children };
@@ -137,10 +138,28 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		this.updateTree();
 	}
 
-	public selectTag(tag: TagItem) {
-		this.selectedTag = tag;
-		this.selectedTag.expanded = true;
-		this.updateTree();
+	public selectTag(element: TreeNode) {
+		if (element.type === 'tag') {
+			this.selectedTag = element;
+			this.selectedTag.expanded = true;
+			this.updateTree();
+		}
+		else {
+			const { range } = element.location;
+			vscode.commands.executeCommand("vscode.open", element.location.uri, <vscode.TextDocumentShowOptions>{ selection: range.with({ end: range.start }) });
+			if (this.selectedDecoration !== undefined) {
+				this.selectedDecoration.dispose();
+			}
+			this.selectedDecoration = vscode.window.createTextEditorDecorationType({
+				borderWidth: '1px',
+				borderStyle: 'solid',
+				overviewRulerColor: 'blue',
+				overviewRulerLane: vscode.OverviewRulerLane.Right,
+			});
+			for (let editor of vscode.window.visibleTextEditors) {
+				editor.setDecorations(this.selectedDecoration, [range]);
+			}
+		}
 	}
 
 	async getTreeItem(element: TreeNode) {
@@ -151,15 +170,13 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 			result.description = true;
 			result.iconPath = vscode.ThemeIcon.Folder;
 			result.collapsibleState = element.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
-			if (element.location) {
-				result.command = {
-					command: 'powersearch.selectTag',
-					title: vscode.l10n.t('Open Reference'),
-					arguments: [
-						element
-					]
-				};
-			}
+			result.command = {
+				command: 'powersearch.selectTag',
+				title: "Select Tag",
+				arguments: [
+					element
+				]
+			};
 			return result;
 		} else {
 			// references
@@ -178,11 +195,10 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 			result.description = vscode.workspace.asRelativePath(element.location.uri);
 			result.tooltip = result.description;
 			result.command = {
-				command: 'vscode.open',
-				title: vscode.l10n.t('Open Reference'),
+				command: 'powersearch.selectTag',
+				title: "Select Tag",
 				arguments: [
-					element.location.uri,
-					<vscode.TextDocumentShowOptions>{ selection: range.with({ end: range.start }) }
+					element
 				]
 			};
 			return result;
