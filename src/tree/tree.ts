@@ -28,7 +28,6 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		for (var element of this.root.references) {
 			if (element.type === 'tag' && element.name === 'Default') {
 				this.selectedTag = element;
-				console.log("found default tag");
 			}
 		}
 		if (this.selectedTag === undefined) {
@@ -140,7 +139,6 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		if (this.selectedTag === undefined) {
 			this.findOrCreateSelectedTag();
 		}
-		console.log("selected tag: " + this.selectedTag.color);
 		node.parent = this.selectedTag;
 		this.selectedTag.expanded = true;
 		this.selectedTag.references.push(node);
@@ -154,7 +152,6 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		// make sure to remove tag if its a child of the deleted node
 		if (this.findInChildren(node, this.selectedTag)) {
 			this.selectedTag = undefined;
-			console.log("should reselect tag");
 		}
 
 		// remove from parent
