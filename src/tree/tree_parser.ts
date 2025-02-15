@@ -9,7 +9,7 @@ export function parseTree(root: FolderData, parent: FolderItem | undefined = und
         location: locationFrom(root.location),
         color: root.color,
         decoration: createDecorationFromColor(root.color),
-        parent: parent
+        parent: parent,
     };
 
     for (const node of root.references) {

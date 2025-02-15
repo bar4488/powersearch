@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { FoldersTreeDataProvider } from './tree/tree';
 import { createDecorationFromColor, isValidColor, setFolderDecoration } from './utils';
-import { FolderItem, ReferenceData, TreeNode } from './tree/tree_item';
+import { FolderItem, ParentNode, ReferenceData, TreeNode } from './tree/tree_item';
 
 const defaultColors = [
     { 'name': 'Navy', 'value': '#001f3f' },
@@ -23,11 +23,26 @@ const defaultColors = [
     { 'name': 'White', 'value': '#FFFFFF' }
 ];
 
-export function updateDecorations(nodes: TreeNode[]) {
+export function updateDecorations(nodes: TreeNode[], first=true) {
     for (let node of nodes) {
         if (node.type === 'folder') {
-            setFolderDecoration(node);
-            updateDecorations(node.references);
+            let hidden = node.isHidden;
+
+            // on the first recursive call, make sure that the nodes are not hidden by going over their parents
+            if (first && !hidden) {
+                let curr: ParentNode = node.parent;
+                while (curr.type !== 'root') {
+                    if(curr.isHidden) {
+                        hidden = true;
+                        break;
+                    }
+                    curr = curr.parent;
+                }
+            }
+            if (!hidden) {
+                setFolderDecoration(node);
+                updateDecorations(node.references, first=false);
+            }
         }
     }
 }

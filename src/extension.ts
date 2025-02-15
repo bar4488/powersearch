@@ -46,6 +46,9 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand("powersearch.renameFolder", async (folder, _) => controller.onRenameFolder(folder)),
 		vscode.commands.registerCommand("powersearch.removeFolder", async (folder, _) => controller.onRemoveFolder(folder)),
 		vscode.commands.registerCommand("powersearch.addFolder", async (folder, _) => controller.onAddFolder(folder)),
+		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityShow', (item: FolderItem) => tree.toggleVisibility(item)),
+		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityHide', (item: FolderItem) => tree.toggleVisibility(item)),
+
 		vscode.commands.registerCommand("powersearch.removeData", async (folder, _) => deleteTreeItems(context)),
 		vscode.commands.registerCommand("powersearch.selectFolder", (folder, _) => controller.onSelectFolder(folder)),
 		vscode.commands.registerCommand("powersearch.saveTree", async () => {

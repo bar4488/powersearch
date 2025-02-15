@@ -27,7 +27,7 @@
           "id": "powersearch-explorer.folders",
           "name": "Folders"
         }
-       ]
+      ]
     },
     "commands": [
       {
@@ -85,6 +85,16 @@
         "command": "powersearch.selectFolder",
         "title": "Remove Folder",
         "icon": "resources/bin.svg"
+      },
+      {
+        "command": "powersearch.toggleFolderVisibilityHide",
+        "title": "Toggle Visibility Hide",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "powersearch.toggleFolderVisibilityShow",
+        "title": "Toggle Visibility",
+        "icon": "$(eye-closed)"
       }
     ],
     "menus": {
@@ -96,27 +106,36 @@
       ],
       "view/item/context": [
         {
+          "command": "powersearch.toggleFolderVisibilityHide",
+          "when": "viewItem == visibleFolder",
+          "group": "inline"
+        },
+        {
+          "command": "powersearch.toggleFolderVisibilityShow",
+          "when": "viewItem == hiddenFolder",
+          "group": "inline"
+        },
+        {
           "command": "powersearch.chooseFolderColor",
-          "when": "viewItem == hidden-folder-item || viewItem == visible-folder-item",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder",
           "group": "inline"
         },
         {
           "command": "powersearch.renameFolder",
-          "when": "viewItem == hidden-folder-item || viewItem == visible-folder-item"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder"
         },
         {
           "command": "powersearch.removeFolder",
-          "when": "viewItem == hidden-folder-item || viewItem == visible-folder-item || viewItem == folder-occurrence-item",
+          "when": "viewItem == reference",
           "group": "inline"
         },
         {
-          "command": "powersearch.addFolder",
-          "when": "viewItem == hidden-folder-item || viewItem == visible-folder-item",
-          "group": "inline"
+          "command": "powersearch.removeFolder",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder"
         },
         {
           "command": "powersearch.addFolder",
-          "when": "viewItem != folder-occurrence-item"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder"
         }
       ],
       "view/title": [

@@ -24,7 +24,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		this._onDidChange.fire(undefined);
 	}
 
-	private findOrCreateSelectedFolder(){
+	private findOrCreateSelectedFolder() {
 		for (var element of this.root.references) {
 			if (element.type === 'folder' && element.name === 'Default') {
 				this.selectedFolder = element;
@@ -148,8 +148,8 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	public removeNode(node: TreeNode) {
 		disposeDecorations([node]);
-		
-		// make sure to remove folder if its a child of the deleted node
+
+		// make sure to remove selected tag if its a child of the deleted node
 		if (this.findInChildren(node, this.selectedFolder)) {
 			this.selectedFolder = undefined;
 		}
@@ -201,7 +201,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		if (element.type === 'folder') {
 			// files
 			result = new vscode.TreeItem(element.name);
-			result.contextValue = 'visible-folder-item';
+			result.contextValue = element.isHidden ? 'hiddenFolder' : 'visibleFolder';
 			result.description = true;
 			result.iconPath = vscode.ThemeIcon.Folder;
 			result.collapsibleState = element.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
@@ -219,7 +219,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 			result = new vscode.TreeItem(label);
 			result.collapsibleState = vscode.TreeItemCollapsibleState.None;
-			result.contextValue = 'folder-occurrence-item';
+			result.contextValue = 'reference';
 			result.description = vscode.workspace.asRelativePath(element.location.uri);
 			result.tooltip = result.description;
 		}
@@ -257,13 +257,25 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			return this.root.references;
 		}
 		if (element.type === 'folder') {
-			return element.references;
+			// sort folders first and then files
+			return element.references.sort((a, b) => a.type === 'folder' ? -1 : b.type === 'folder' ? 1 : 0);
 		}
 		return undefined;
 	}
 
 	getParent(element: TreeNode) {
 		return element.parent.type === 'root' ? undefined : element.parent;
+	}
+
+	toggleVisibility(item: FolderItem) {
+		item.isHidden = !item.isHidden;
+		if (item.isHidden) {
+			disposeDecorations([item]);
+		}
+		else {
+			updateDecorations([item]);
+		}
+		this._onDidChange.fire(undefined);
 	}
 }
 

@@ -25,14 +25,16 @@ export interface ReferenceData {
 }
 
 export interface FolderItem {
-	type: 'folder',
-	name: string,
-	references: TreeNode[],
-	location?: vscode.Location,
-	color?: string, 
+	type: 'folder'
+	name: string
+	references: TreeNode[]
+	location?: vscode.Location
+	color?: string
 
-	expanded?: boolean,
+	isHidden?: boolean
+	expanded?: boolean
 	decoration?: vscode.TextEditorDecorationType
+	iconPath?: vscode.ThemeIcon
 	parent?: ParentNode
 }
 
@@ -55,9 +57,11 @@ export interface LocationData {
 	}
 }
 
-export function createFolderItem(data: Omit<FolderItem, 'type'>): FolderItem {
+export function createFolderItem(data: Omit<FolderItem, 'type' | 'iconPath' | 'isHidden'>): FolderItem {
 	return {
 		type: 'folder',
+		isHidden: false,
+		iconPath: new vscode.ThemeIcon('eye'),
 		...data
 	};
 }
