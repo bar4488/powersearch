@@ -3,6 +3,7 @@ import { ParentNode, ReferenceItem, RootItem, TagItem, TreeNode, createTagItem }
 import { createDecorationFromColor, nodeToIndices, getPreviewChunks, setTagDecoration, indicesToNode } from '../utils';
 import { disposeDecorations, updateDecorations } from '../decorator';
 import { dumpTree, parseTree } from './tree_parser';
+import { RequestListener } from 'http';
 
 export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
@@ -11,19 +12,31 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
 	private root: RootItem;
+
 	private selectedTag: TagItem;
-	private selectedDecoration: vscode.TextEditorDecorationType;
 
 	constructor(children: TreeNode[]) {
 		this.root = { type: 'root', references: children };
-		this.selectedTag = createTagItem({
-			name: "Default", references: [],
-		});
 		for (var child of children) {
 			child.parent = this.root;
 		}
 		updateDecorations(children);
 		this._onDidChange.fire(undefined);
+	}
+
+	private findOrCreateSelectedTag(){
+		for (var element of this.root.references) {
+			if (element.type === 'tag' && element.name === 'Default') {
+				this.selectedTag = element;
+				console.log("found default tag");
+			}
+		}
+		if (this.selectedTag === undefined) {
+			this.selectedTag = createTagItem({
+				name: "Default", references: [],
+			});
+			this.addNode(this.selectedTag);
+		}
 	}
 
 	dropMimeTypes = ['application/powersearch'];
@@ -63,6 +76,13 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		this.updateTree();
 	}
 
+	/**
+	 * Handles drag event. Only drags where all nodes have the same parent are allowed.
+	 * The indices of the dragged nodes are stored in the data transfer object.
+	 * @param source The nodes to be dragged.
+	 * @param treeDataTransfer The data transfer object.
+	 * @param token A cancellation token.
+	 */
 	public async handleDrag(source: TreeNode[], treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
 		if (source.length === 0) {
 			return;
@@ -104,38 +124,67 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 			parent = this.root;
 		}
 		node.parent = parent;
-		parent.references.push(node);
+		// push at start of references
+		parent.references = [node, ...parent.references];
 
 		if (node.type === 'tag') {
 			setTagDecoration(node);
 		}
+		else if (parent !== this.root) {
+			updateDecorations([parent as TagItem]);
+		}
 		this.updateTree();
 	}
 
-	public addReferenceToSelectedTag(ref: ReferenceItem) {
-		ref.parent = this.selectedTag;
-		this.selectedTag.expanded = true;
-		this.selectedTag.references.push(ref);
-		if (this.selectedTag.parent === undefined) {
-			this.addNode(this.selectedTag);
-			return;
+	public addNodeToSelectedTag(node: ReferenceItem) {
+		if (this.selectedTag === undefined) {
+			this.findOrCreateSelectedTag();
 		}
+		console.log("selected tag: " + this.selectedTag.color);
+		node.parent = this.selectedTag;
+		this.selectedTag.expanded = true;
+		this.selectedTag.references.push(node);
 		updateDecorations([this.selectedTag]);
 		this.updateTree();
 	}
 
 	public removeNode(node: TreeNode) {
 		disposeDecorations([node]);
+		
+		// make sure to remove tag if its a child of the deleted node
+		if (this.findInChildren(node, this.selectedTag)) {
+			this.selectedTag = undefined;
+			console.log("should reselect tag");
+		}
+
+		// remove from parent
 		if (!!node.parent) {
 			node.parent.references = node.parent.references.filter((t) => t !== node);
 		}
 		else {
-			this.root.references = this.root.references.filter((t) => t !== node);
+			// should not happen
+			console.error("node has no parent");
 		}
+		// update decorations
 		if (node.type === "ref" && !!node.parent) {
 			updateDecorations([node.parent as TreeNode]);
 		}
 		this.updateTree();
+	}
+
+	private findInChildren(node: TreeNode, searchNode) {
+		if (node === searchNode) {
+			return true;
+		}
+		if (node.type === 'ref') {
+			return false;
+		}
+		for (var child of node.references) {
+			if (this.findInChildren(child, searchNode)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public selectTag(element: TreeNode) {
@@ -147,37 +196,19 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		else {
 			const { range } = element.location;
 			vscode.commands.executeCommand("vscode.open", element.location.uri, <vscode.TextDocumentShowOptions>{ selection: range.with({ end: range.start }) });
-			if (this.selectedDecoration !== undefined) {
-				this.selectedDecoration.dispose();
-			}
-			this.selectedDecoration = vscode.window.createTextEditorDecorationType({
-				borderWidth: '1px',
-				borderStyle: 'solid',
-				overviewRulerColor: 'blue',
-				overviewRulerLane: vscode.OverviewRulerLane.Right,
-			});
-			for (let editor of vscode.window.visibleTextEditors) {
-				editor.setDecorations(this.selectedDecoration, [range]);
-			}
 		}
 	}
 
 	async getTreeItem(element: TreeNode) {
+		let result: vscode.TreeItem;
 		if (element.type === 'tag') {
 			// files
-			const result = new vscode.TreeItem(element.name);
+			result = new vscode.TreeItem(element.name);
 			result.contextValue = 'visible-tag-item';
 			result.description = true;
 			result.iconPath = vscode.ThemeIcon.Folder;
 			result.collapsibleState = element.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
-			result.command = {
-				command: 'powersearch.selectTag',
-				title: "Select Tag",
-				arguments: [
-					element
-				]
-			};
-			return result;
+			// when a user presses a tag, select it
 		} else {
 			// references
 			const { range } = element.location;
@@ -189,20 +220,20 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 				highlights: [[before.length, before.length + inside.length]]
 			};
 
-			const result = new vscode.TreeItem(label);
+			result = new vscode.TreeItem(label);
 			result.collapsibleState = vscode.TreeItemCollapsibleState.None;
 			result.contextValue = 'tag-occurrence-item';
 			result.description = vscode.workspace.asRelativePath(element.location.uri);
 			result.tooltip = result.description;
-			result.command = {
-				command: 'powersearch.selectTag',
-				title: "Select Tag",
-				arguments: [
-					element
-				]
-			};
-			return result;
 		}
+		result.command = {
+			command: 'powersearch.selectTag',
+			title: "Select Tag",
+			arguments: [
+				element
+			]
+		};
+		return result;
 	}
 
 	public setTagColor(tag: TagItem, color: string) {

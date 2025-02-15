@@ -52,7 +52,7 @@ export class TreeController {
         const basePosition = vscode.window.activeTextEditor?.selection.anchor;
         const selection = vscode.window.activeTextEditor?.selection;
         const filename = vscode.workspace.asRelativePath(doc.fileName);
-        this.tree.addReferenceToSelectedTag(createReferenceItem({ location: new vscode.Location(doc.uri, selection) }));
+        this.tree.addNodeToSelectedTag(createReferenceItem({ location: new vscode.Location(doc.uri, selection) }));
     }
 
     public async onColorLine() {
@@ -61,7 +61,7 @@ export class TreeController {
         const basePosition = vscode.window.activeTextEditor?.selection.anchor;
         const lineRange = new vscode.Range(basePosition.with(undefined, 0), basePosition.translate(0, 1000));
         const filename = vscode.workspace.asRelativePath(doc.fileName);
-        this.tree.addReferenceToSelectedTag(createReferenceItem({ location: new vscode.Location(doc.uri, lineRange) }));
+        this.tree.addNodeToSelectedTag(createReferenceItem({ location: new vscode.Location(doc.uri, lineRange) }));
     }
 
     public async onChangeTagColor(tag: TagItem) {

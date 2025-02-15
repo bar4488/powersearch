@@ -29,13 +29,13 @@ export function activate(context: vscode.ExtensionContext) {
 	let controller = new TreeController(tree);
 
 	const uri = vscode.window.activeTextEditor.document.uri;
-	console.log(uri);
-	console.log(uri.toString());
-	console.log(vscode.Uri.parse(uri.toString()));
+	// console.log(uri);
+	// console.log(uri.toString());
+	// console.log(vscode.Uri.parse(uri.toString()));
 
 	context.subscriptions.push(
-		// vscode.window.registerTreeDataProvider('cyber-explorer.tags', tree),
-		vscode.window.createTreeView('cyber-explorer.tags', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true, dragAndDropController: tree }),
+		// vscode.window.registerTreeDataProvider('powersearch-explorer.tags', tree),
+		vscode.window.createTreeView('powersearch-explorer.tags', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true, dragAndDropController: tree }),
 
 
 		vscode.window.onDidChangeActiveTextEditor(() => updateDecorations(tree.getNodes())),

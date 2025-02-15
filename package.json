@@ -15,16 +15,16 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "cyber-explorer",
-          "title": "Cyber Explorer",
+          "id": "powersearch-explorer",
+          "title": "Powersearch",
           "icon": "resources/cyber.svg"
         }
       ]
     },
     "views": {
-      "cyber-explorer": [
+      "powersearch-explorer": [
         {
-          "id": "cyber-explorer.tags",
+          "id": "powersearch-explorer.tags",
           "name": "Tags"
         }
        ]
@@ -40,9 +40,9 @@
       },
       {
         "command": "powersearch.addTag",
-        "title": "Powersearch: Add a new tag",
+        "title": "Add a new tag",
         "icon": {
-          "light": "resources/light/refresh.svg",
+          "light": "resources/add-folder.svg",
           "dark": "resources/add-folder.svg"
         }
       },
@@ -91,7 +91,7 @@
       "webview/context": [
         {
           "command": "powersearch.addTag",
-          "when": "view == cyber-explorer.tags"
+          "when": "view == powersearch-explorer.tags"
         }
       ],
       "view/item/context": [
@@ -102,8 +102,7 @@
         },
         {
           "command": "powersearch.renameTag",
-          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
-          "group": "inline"
+          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item"
         },
         {
           "command": "powersearch.removeTag",
@@ -123,7 +122,7 @@
       "view/title": [
         {
           "command": "powersearch.addTag",
-          "when": "view == cyber-explorer.tags",
+          "when": "view == powersearch-explorer.tags",
           "group": "navigation"
         }
       ]
