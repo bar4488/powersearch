@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { ParentNode, ReferenceItem, RootItem, TagItem, TreeNode, createTagItem } from './tag-item';
-import { createDecorationFromColor, nodeToIndices, getPreviewChunks, setTagDecoration, indicesToNode } from '../utils';
+import { ParentNode, ReferenceItem, RootItem, FolderItem, TreeNode, createFolderItem } from './tree_item';
+import { createDecorationFromColor, nodeToIndices, getPreviewChunks, setFolderDecoration, indicesToNode } from '../utils';
 import { disposeDecorations, updateDecorations } from '../decorator';
 import { dumpTree, parseTree } from './tree_parser';
 import { RequestListener } from 'http';
 
-export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
+export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
 	private readonly _listener: vscode.Disposable;
 	private readonly _onDidChange = new vscode.EventEmitter<undefined>();
@@ -13,7 +13,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 	readonly onDidChangeTreeData = this._onDidChange.event;
 	private root: RootItem;
 
-	private selectedTag: TagItem;
+	private selectedFolder: FolderItem;
 
 	constructor(children: TreeNode[]) {
 		this.root = { type: 'root', references: children };
@@ -24,17 +24,17 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		this._onDidChange.fire(undefined);
 	}
 
-	private findOrCreateSelectedTag(){
+	private findOrCreateSelectedFolder(){
 		for (var element of this.root.references) {
-			if (element.type === 'tag' && element.name === 'Default') {
-				this.selectedTag = element;
+			if (element.type === 'folder' && element.name === 'Default') {
+				this.selectedFolder = element;
 			}
 		}
-		if (this.selectedTag === undefined) {
-			this.selectedTag = createTagItem({
+		if (this.selectedFolder === undefined) {
+			this.selectedFolder = createFolderItem({
 				name: "Default", references: [],
 			});
-			this.addNode(this.selectedTag);
+			this.addNode(this.selectedFolder);
 		}
 	}
 
@@ -126,32 +126,32 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		// push at start of references
 		parent.references = [node, ...parent.references];
 
-		if (node.type === 'tag') {
-			setTagDecoration(node);
+		if (node.type === 'folder') {
+			setFolderDecoration(node);
 		}
 		else if (parent !== this.root) {
-			updateDecorations([parent as TagItem]);
+			updateDecorations([parent as FolderItem]);
 		}
 		this.updateTree();
 	}
 
-	public addNodeToSelectedTag(node: ReferenceItem) {
-		if (this.selectedTag === undefined) {
-			this.findOrCreateSelectedTag();
+	public addNodeToSelectedFolder(node: ReferenceItem) {
+		if (this.selectedFolder === undefined) {
+			this.findOrCreateSelectedFolder();
 		}
-		node.parent = this.selectedTag;
-		this.selectedTag.expanded = true;
-		this.selectedTag.references.push(node);
-		updateDecorations([this.selectedTag]);
+		node.parent = this.selectedFolder;
+		this.selectedFolder.expanded = true;
+		this.selectedFolder.references.push(node);
+		updateDecorations([this.selectedFolder]);
 		this.updateTree();
 	}
 
 	public removeNode(node: TreeNode) {
 		disposeDecorations([node]);
 		
-		// make sure to remove tag if its a child of the deleted node
-		if (this.findInChildren(node, this.selectedTag)) {
-			this.selectedTag = undefined;
+		// make sure to remove folder if its a child of the deleted node
+		if (this.findInChildren(node, this.selectedFolder)) {
+			this.selectedFolder = undefined;
 		}
 
 		// remove from parent
@@ -184,10 +184,10 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		return false;
 	}
 
-	public selectTag(element: TreeNode) {
-		if (element.type === 'tag') {
-			this.selectedTag = element;
-			this.selectedTag.expanded = true;
+	public selectFolder(element: TreeNode) {
+		if (element.type === 'folder') {
+			this.selectedFolder = element;
+			this.selectedFolder.expanded = true;
 			this.updateTree();
 		}
 		else {
@@ -198,14 +198,14 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 
 	async getTreeItem(element: TreeNode) {
 		let result: vscode.TreeItem;
-		if (element.type === 'tag') {
+		if (element.type === 'folder') {
 			// files
 			result = new vscode.TreeItem(element.name);
-			result.contextValue = 'visible-tag-item';
+			result.contextValue = 'visible-folder-item';
 			result.description = true;
 			result.iconPath = vscode.ThemeIcon.Folder;
 			result.collapsibleState = element.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
-			// when a user presses a tag, select it
+			// when a user presses a folder, select it
 		} else {
 			// references
 			const { range } = element.location;
@@ -219,13 +219,13 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 
 			result = new vscode.TreeItem(label);
 			result.collapsibleState = vscode.TreeItemCollapsibleState.None;
-			result.contextValue = 'tag-occurrence-item';
+			result.contextValue = 'folder-occurrence-item';
 			result.description = vscode.workspace.asRelativePath(element.location.uri);
 			result.tooltip = result.description;
 		}
 		result.command = {
-			command: 'powersearch.selectTag',
-			title: "Select Tag",
+			command: 'powersearch.selectFolder',
+			title: "Select Folder",
 			arguments: [
 				element
 			]
@@ -233,22 +233,22 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		return result;
 	}
 
-	public setTagColor(tag: TagItem, color: string) {
-		if (!!tag.decoration) {
-			tag.decoration.dispose();
-			tag.decoration = undefined;
-			tag.color = undefined;
+	public setFolderColor(folder: FolderItem, color: string) {
+		if (!!folder.decoration) {
+			folder.decoration.dispose();
+			folder.decoration = undefined;
+			folder.color = undefined;
 		}
 		if (color === undefined) {
 			return;
 		}
-		tag.decoration = createDecorationFromColor(color);
-		tag.color = color;
-		updateDecorations([tag]);
+		folder.decoration = createDecorationFromColor(color);
+		folder.color = color;
+		updateDecorations([folder]);
 		this.updateTree();
 	}
 
-	public updateNode(tag: TagItem) {
+	public updateNode(folder: FolderItem) {
 		this.updateTree();
 	}
 
@@ -256,7 +256,7 @@ export class TagsTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, 
 		if (element === undefined) {
 			return this.root.references;
 		}
-		if (element.type === 'tag') {
+		if (element.type === 'folder') {
 			return element.references;
 		}
 		return undefined;

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { TagsTreeDataProvider } from './tree/tree';
-import { createDecorationFromColor, isValidColor, setTagDecoration } from './utils';
-import { TagItem, ReferenceData, createReferenceItem, createTagItem } from './tree/tag-item';
+import { FoldersTreeDataProvider } from './tree/tree';
+import { createDecorationFromColor, isValidColor, setFolderDecoration } from './utils';
+import { FolderItem, ReferenceData, createReferenceItem, createFolderItem } from './tree/tree_item';
 
 const defaultColors = [
     { 'name': 'Navy', 'value': '#001f3f' },
@@ -24,7 +24,7 @@ const defaultColors = [
 ];
 
 export class TreeController {
-    constructor(private tree: TagsTreeDataProvider) { }
+    constructor(private tree: FoldersTreeDataProvider) { }
 
     public async onColorSymbol() {
         let doc = vscode.window.activeTextEditor?.document;
@@ -34,15 +34,15 @@ export class TreeController {
         if (refs.length > 0) {
             const baseRange = doc.getWordRangeAtPosition(basePosition);
             const content = doc.getText(baseRange);
-            const tag: TagItem = createTagItem({
+            const folder: FolderItem = createFolderItem({
                 name: content,
                 location: new vscode.Location(doc.uri, baseRange),
                 references: refs.map((t) => createReferenceItem({ location: t })),
                 color: "#ffff00",
                 decoration: createDecorationFromColor("#ffff00"),
             });
-            tag.references.forEach((t) => t.parent = tag);
-            this.tree.addNode(tag);
+            folder.references.forEach((t) => t.parent = folder);
+            this.tree.addNode(folder);
         }
     }
 
@@ -52,7 +52,7 @@ export class TreeController {
         const basePosition = vscode.window.activeTextEditor?.selection.anchor;
         const selection = vscode.window.activeTextEditor?.selection;
         const filename = vscode.workspace.asRelativePath(doc.fileName);
-        this.tree.addNodeToSelectedTag(createReferenceItem({ location: new vscode.Location(doc.uri, selection) }));
+        this.tree.addNodeToSelectedFolder(createReferenceItem({ location: new vscode.Location(doc.uri, selection) }));
     }
 
     public async onColorLine() {
@@ -61,16 +61,16 @@ export class TreeController {
         const basePosition = vscode.window.activeTextEditor?.selection.anchor;
         const lineRange = new vscode.Range(basePosition.with(undefined, 0), basePosition.translate(0, 1000));
         const filename = vscode.workspace.asRelativePath(doc.fileName);
-        this.tree.addNodeToSelectedTag(createReferenceItem({ location: new vscode.Location(doc.uri, lineRange) }));
+        this.tree.addNodeToSelectedFolder(createReferenceItem({ location: new vscode.Location(doc.uri, lineRange) }));
     }
 
-    public async onChangeTagColor(tag: TagItem) {
+    public async onChangeFolderColor(folder: FolderItem) {
         let choice = await vscode.window.showQuickPick([...defaultColors.map((o) => o.name), 'Custom', 'None']);
         if (!choice) {
             return;
         }
         if (choice === 'None') {
-            this.tree.setTagColor(tag, undefined);
+            this.tree.setFolderColor(folder, undefined);
             return;
         }
 
@@ -87,37 +87,37 @@ export class TreeController {
             color = defaultColors[idx].value;
         }
 
-        this.tree.setTagColor(tag, color);
+        this.tree.setFolderColor(folder, color);
     }
 
-    public async onRenameTag(tag: TagItem) {
-        let newName = await vscode.window.showInputBox({ prompt: "Enter tag name" });
+    public async onRenameFolder(folder: FolderItem) {
+        let newName = await vscode.window.showInputBox({ prompt: "Enter folder name" });
         if (!newName) {
             return;
         }
 
-        tag.name = newName;
-        this.tree.updateNode(tag);
+        folder.name = newName;
+        this.tree.updateNode(folder);
     }
 
-    public async onSelectTag(tag: TagItem) {
-        this.tree.selectTag(tag);
+    public async onSelectFolder(folder: FolderItem) {
+        this.tree.selectFolder(folder);
     }
 
-    public onRemoveTag(tag: TagItem) {
-        if (tag.decoration !== undefined) {
-            tag.decoration.dispose();
+    public onRemoveFolder(folder: FolderItem) {
+        if (folder.decoration !== undefined) {
+            folder.decoration.dispose();
         }
-        this.tree.removeNode(tag);
+        this.tree.removeNode(folder);
     }
 
-    public async onAddTag(tag: TagItem) {
-        let newName = await vscode.window.showInputBox({ prompt: "Enter tag name" });
+    public async onAddFolder(folder: FolderItem) {
+        let newName = await vscode.window.showInputBox({ prompt: "Enter folder name" });
         if (!newName) {
             return;
         }
         else {
-            this.tree.addNode(createTagItem({ name: newName, references: [] }), tag);
+            this.tree.addNode(createFolderItem({ name: newName, references: [] }), folder);
         }
     }
 }

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { TagsTreeDataProvider } from './tree/tree';
-import { createDecorationFromColor, isValidColor, setTagDecoration } from './utils';
-import { TagItem, ReferenceData, TreeNode } from './tree/tag-item';
+import { FoldersTreeDataProvider } from './tree/tree';
+import { createDecorationFromColor, isValidColor, setFolderDecoration } from './utils';
+import { FolderItem, ReferenceData, TreeNode } from './tree/tree_item';
 
 const defaultColors = [
     { 'name': 'Navy', 'value': '#001f3f' },
@@ -25,8 +25,8 @@ const defaultColors = [
 
 export function updateDecorations(nodes: TreeNode[]) {
     for (let node of nodes) {
-        if (node.type === 'tag') {
-            setTagDecoration(node);
+        if (node.type === 'folder') {
+            setFolderDecoration(node);
             updateDecorations(node.references);
         }
     }
@@ -34,7 +34,7 @@ export function updateDecorations(nodes: TreeNode[]) {
 
 export function disposeDecorations(nodes: TreeNode[]) {
     for (let node of nodes) {
-        if (node.type === 'tag') {
+        if (node.type === 'folder') {
             if (!!node.decoration) {
                 node.decoration.dispose();
                 node.decoration = undefined;

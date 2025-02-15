@@ -1,9 +1,9 @@
 import { createDecorationFromColor, locationDataFrom, locationFrom } from "../utils";
-import { TagData, TagItem, createReferenceData, createReferenceItem } from "./tag-item";
+import { FolderData, FolderItem, createReferenceData, createReferenceItem } from "./tree_item";
 
-export function parseTree(root: TagData, parent: TagItem | undefined = undefined): TagItem {
-    let rootItem: TagItem = {
-        type: "tag",
+export function parseTree(root: FolderData, parent: FolderItem | undefined = undefined): FolderItem {
+    let rootItem: FolderItem = {
+        type: "folder",
         name: root.name,
         references: [],
         location: locationFrom(root.location),
@@ -23,9 +23,9 @@ export function parseTree(root: TagData, parent: TagItem | undefined = undefined
     return rootItem;
 }
 
-export function dumpTree(root: TagItem): TagData {
-    let data: TagData = {
-        type: 'tag',
+export function dumpTree(root: FolderItem): FolderData {
+    let data: FolderData = {
+        type: 'folder',
         name: root.name,
         location: locationDataFrom(root.location),
         references: [],

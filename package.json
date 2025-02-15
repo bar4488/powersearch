@@ -24,8 +24,8 @@
     "views": {
       "powersearch-explorer": [
         {
-          "id": "powersearch-explorer.tags",
-          "name": "Tags"
+          "id": "powersearch-explorer.folders",
+          "name": "Folders"
         }
        ]
     },
@@ -36,11 +36,11 @@
       },
       {
         "command": "powersearch.addSearchResults",
-        "title": "Powersearch: Add Search Results to Tags"
+        "title": "Powersearch: Add Search Results to Folders"
       },
       {
-        "command": "powersearch.addTag",
-        "title": "Add a new tag",
+        "command": "powersearch.addFolder",
+        "title": "Add a new folder",
         "icon": {
           "light": "resources/add-folder.svg",
           "dark": "resources/add-folder.svg"
@@ -67,62 +67,62 @@
         "title": "Powersearch: Save Refs"
       },
       {
-        "command": "powersearch.chooseTagColor",
+        "command": "powersearch.chooseFolderColor",
         "title": "Choose Color",
         "icon": "resources/color.svg"
       },
       {
-        "command": "powersearch.renameTag",
-        "title": "Rename Tag",
+        "command": "powersearch.renameFolder",
+        "title": "Rename Folder",
         "icon": "resources/edit.svg"
       },
       {
-        "command": "powersearch.removeTag",
-        "title": "Remove Tag",
+        "command": "powersearch.removeFolder",
+        "title": "Remove Folder",
         "icon": "resources/bin.svg"
       },
       {
-        "command": "powersearch.selectTag",
-        "title": "Remove Tag",
+        "command": "powersearch.selectFolder",
+        "title": "Remove Folder",
         "icon": "resources/bin.svg"
       }
     ],
     "menus": {
       "webview/context": [
         {
-          "command": "powersearch.addTag",
-          "when": "view == powersearch-explorer.tags"
+          "command": "powersearch.addFolder",
+          "when": "view == powersearch-explorer.folders"
         }
       ],
       "view/item/context": [
         {
-          "command": "powersearch.chooseTagColor",
-          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
+          "command": "powersearch.chooseFolderColor",
+          "when": "viewItem == hidden-folder-item || viewItem == visible-folder-item",
           "group": "inline"
         },
         {
-          "command": "powersearch.renameTag",
-          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item"
+          "command": "powersearch.renameFolder",
+          "when": "viewItem == hidden-folder-item || viewItem == visible-folder-item"
         },
         {
-          "command": "powersearch.removeTag",
-          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item || viewItem == tag-occurrence-item",
+          "command": "powersearch.removeFolder",
+          "when": "viewItem == hidden-folder-item || viewItem == visible-folder-item || viewItem == folder-occurrence-item",
           "group": "inline"
         },
         {
-          "command": "powersearch.addTag",
-          "when": "viewItem == hidden-tag-item || viewItem == visible-tag-item",
+          "command": "powersearch.addFolder",
+          "when": "viewItem == hidden-folder-item || viewItem == visible-folder-item",
           "group": "inline"
         },
         {
-          "command": "powersearch.addTag",
-          "when": "viewItem != tag-occurrence-item"
+          "command": "powersearch.addFolder",
+          "when": "viewItem != folder-occurrence-item"
         }
       ],
       "view/title": [
         {
-          "command": "powersearch.addTag",
-          "when": "view == powersearch-explorer.tags",
+          "command": "powersearch.addFolder",
+          "when": "view == powersearch-explorer.folders",
           "group": "navigation"
         }
       ]

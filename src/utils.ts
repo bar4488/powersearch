@@ -1,17 +1,17 @@
 import * as vscode from 'vscode';
-import { LocationData, PositionData, RootItem, TagItem, TreeNode, TreeNodeOrRoot } from './tree/tag-item';
+import { LocationData, PositionData, RootItem, FolderItem, TreeNode, TreeNodeOrRoot } from './tree/tree_item';
 
-export function setTagDecoration(tag: TagItem) {
-    if (tag.color === undefined) {
+export function setFolderDecoration(folder: FolderItem) {
+    if (folder.color === undefined) {
         return;
     }
-    let references = tag.references.filter((n) => n.type === 'ref');
-    if (tag.decoration === undefined) {
-        tag.decoration = createDecorationFromColor(tag.color);
+    let references = folder.references.filter((n) => n.type === 'ref');
+    if (folder.decoration === undefined) {
+        folder.decoration = createDecorationFromColor(folder.color);
     }
     for (let editor of vscode.window.visibleTextEditors) {
         let ranges = references.filter((r) => r.location.uri.toString() === editor.document.uri.toString()).map((r) => r.location.range);
-        editor.setDecorations(tag.decoration, ranges);
+        editor.setDecorations(folder.decoration, ranges);
     }
 }
 
@@ -46,7 +46,7 @@ export function indicesToNode(indices: number[], root): TreeNode {
     let childs = root.references;
     for (var idx of indices) {
         curr = childs[idx];
-        childs = (curr as TagItem).references;
+        childs = (curr as FolderItem).references;
     }
     return curr;
 }
