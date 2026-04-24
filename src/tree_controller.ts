@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { createDecorationFromColor, isValidColor, setFolderDecoration } from './utils';
-import { FolderItem, ReferenceData, createReferenceItem, createFolderItem } from './tree/tree_item';
+import { createDecorationFromColor, isValidColor } from './utils';
+import { FolderItem, TreeNode, createReferenceItem, createFolderItem } from './tree/tree_item';
 
 const defaultColors = [
     { 'name': 'Navy', 'value': '#001f3f' },
@@ -27,12 +27,22 @@ export class TreeController {
     constructor(private tree: FoldersTreeDataProvider) { }
 
     public async onColorSymbol() {
-        let doc = vscode.window.activeTextEditor?.document;
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showInformationMessage("Open an editor before coloring a symbol.");
+            return;
+        }
 
-        const basePosition = vscode.window.activeTextEditor?.selection.anchor;
-        const refs: vscode.Location[] = await vscode.commands.executeCommand('vscode.executeReferenceProvider', doc.uri, basePosition);
+        const doc = editor.document;
+        const basePosition = editor.selection.anchor;
+        const baseRange = doc.getWordRangeAtPosition(basePosition);
+        if (!baseRange) {
+            vscode.window.showInformationMessage("No symbol found at the current cursor position.");
+            return;
+        }
+
+        const refs = await vscode.commands.executeCommand<vscode.Location[]>('vscode.executeReferenceProvider', doc.uri, basePosition) ?? [];
         if (refs.length > 0) {
-            const baseRange = doc.getWordRangeAtPosition(basePosition);
             const content = doc.getText(baseRange);
             const folder: FolderItem = createFolderItem({
                 name: content,
@@ -44,23 +54,37 @@ export class TreeController {
             folder.references.forEach((t) => t.parent = folder);
             this.tree.addNode(folder);
         }
+        else {
+            vscode.window.showInformationMessage("No references found for the selected symbol.");
+        }
     }
 
     public async onColorSelection() {
-        let doc = vscode.window.activeTextEditor?.document;
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showInformationMessage("Open an editor before coloring a selection.");
+            return;
+        }
 
-        const basePosition = vscode.window.activeTextEditor?.selection.anchor;
-        const selection = vscode.window.activeTextEditor?.selection;
-        const filename = vscode.workspace.asRelativePath(doc.fileName);
+        const doc = editor.document;
+        const selection = editor.selection;
+        if (selection.isEmpty) {
+            vscode.window.showInformationMessage("Select text before coloring a selection.");
+            return;
+        }
         this.tree.addNodeToSelectedFolder(createReferenceItem({ location: new vscode.Location(doc.uri, selection) }));
     }
 
     public async onColorLine() {
-        let doc = vscode.window.activeTextEditor?.document;
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showInformationMessage("Open an editor before coloring a line.");
+            return;
+        }
 
-        const basePosition = vscode.window.activeTextEditor?.selection.anchor;
+        const doc = editor.document;
+        const basePosition = editor.selection.anchor;
         const lineRange = new vscode.Range(basePosition.with(undefined, 0), basePosition.translate(0, 1000));
-        const filename = vscode.workspace.asRelativePath(doc.fileName);
         this.tree.addNodeToSelectedFolder(createReferenceItem({ location: new vscode.Location(doc.uri, lineRange) }));
     }
 
@@ -100,8 +124,8 @@ export class TreeController {
         this.tree.updateNode(folder);
     }
 
-    public async onSelectFolder(folder: FolderItem) {
-        this.tree.selectFolder(folder);
+    public async onSelectFolder(node: TreeNode) {
+        this.tree.selectFolder(node);
     }
 
     public onRemoveFolder(folder: FolderItem) {

@@ -2,12 +2,9 @@ import * as vscode from 'vscode';
 import { ParentNode, ReferenceItem, RootItem, FolderItem, TreeNode, createFolderItem } from './tree_item';
 import { createDecorationFromColor, nodeToIndices, getPreviewChunks, setFolderDecoration, indicesToNode } from '../utils';
 import { disposeDecorations, updateDecorations } from '../decorator';
-import { dumpTree, parseTree } from './tree_parser';
-import { RequestListener } from 'http';
 
 export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
-	private readonly _listener: vscode.Disposable;
 	private readonly _onDidChange = new vscode.EventEmitter<undefined>();
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
@@ -54,6 +51,9 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		let nodes: TreeNode[] = [];
 		for (var nodeIndices of transferItem.value) {
 			const node = indicesToNode(nodeIndices, this.root);
+			if (!node) {
+				return;
+			}
 			nodes.push(node);
 		}
 
@@ -63,6 +63,14 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 		if (targetNode === nodes[0].parent) {
 			// we do not want to remove anything
+			return;
+		}
+		if (targetNode.type === 'root' && nodes.some((node) => node.type === 'ref')) {
+			vscode.window.showInformationMessage("References must stay inside folders.");
+			return;
+		}
+		if (nodes.some((node) => this.containsNode(node, targetNode))) {
+			vscode.window.showInformationMessage("Cannot move a folder into itself.");
 			return;
 		}
 		nodes[0].parent.references = nodes[0].parent.references.filter((n) => !nodes.includes(n));
@@ -106,7 +114,6 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	dispose(): void {
 		this._onDidChange.dispose();
-		this._listener.dispose();
 	}
 
 	private updateTree() {
@@ -116,6 +123,13 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	public getNodes() {
 		return this.root.references;
+	}
+
+	public clear() {
+		disposeDecorations(this.root.references);
+		this.root.references = [];
+		this.selectedFolder = undefined;
+		this._onDidChange.fire(undefined);
 	}
 
 	public addNode(node: TreeNode, parent: ParentNode = undefined) {
@@ -184,7 +198,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return false;
 	}
 
-	public selectFolder(element: TreeNode) {
+	public async selectFolder(element: TreeNode) {
 		if (element.type === 'folder') {
 			this.selectedFolder = element;
 			this.selectedFolder.expanded = true;
@@ -192,7 +206,12 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		}
 		else {
 			const { range } = element.location;
-			vscode.commands.executeCommand("vscode.open", element.location.uri, <vscode.TextDocumentShowOptions>{ selection: range.with({ end: range.start }) });
+			try {
+				await vscode.commands.executeCommand("vscode.open", element.location.uri, <vscode.TextDocumentShowOptions>{ selection: range.with({ end: range.start }) });
+			}
+			catch {
+				vscode.window.showInformationMessage(`Could not open reference: ${vscode.workspace.asRelativePath(element.location.uri)}`);
+			}
 		}
 	}
 
@@ -209,18 +228,24 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		} else {
 			// references
 			const { range } = element.location;
-			const doc = await vscode.workspace.openTextDocument(element.location.uri);
-			const { before, inside, after } = getPreviewChunks(doc, range);
+			const description = vscode.workspace.asRelativePath(element.location.uri);
+			try {
+				const doc = await vscode.workspace.openTextDocument(element.location.uri);
+				const { before, inside, after } = getPreviewChunks(doc, range);
 
-			const label: vscode.TreeItemLabel = {
-				label: before + inside + after,
-				highlights: [[before.length, before.length + inside.length]]
-			};
+				const label: vscode.TreeItemLabel = {
+					label: before + inside + after,
+					highlights: [[before.length, before.length + inside.length]]
+				};
 
-			result = new vscode.TreeItem(label);
+				result = new vscode.TreeItem(label);
+			}
+			catch {
+				result = new vscode.TreeItem(`Missing reference: ${description}`);
+			}
 			result.collapsibleState = vscode.TreeItemCollapsibleState.None;
 			result.contextValue = 'reference';
-			result.description = vscode.workspace.asRelativePath(element.location.uri);
+			result.description = description;
 			result.tooltip = result.description;
 		}
 		result.command = {
@@ -233,13 +258,14 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return result;
 	}
 
-	public setFolderColor(folder: FolderItem, color: string) {
+	public setFolderColor(folder: FolderItem, color: string | undefined) {
 		if (!!folder.decoration) {
 			folder.decoration.dispose();
 			folder.decoration = undefined;
 			folder.color = undefined;
 		}
 		if (color === undefined) {
+			this.updateTree();
 			return;
 		}
 		folder.decoration = createDecorationFromColor(color);
@@ -276,6 +302,16 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			updateDecorations([item]);
 		}
 		this._onDidChange.fire(undefined);
+	}
+
+	private containsNode(node: TreeNode, searchNode: TreeNode | RootItem) {
+		if (node === searchNode) {
+			return true;
+		}
+		if (node.type === 'ref') {
+			return false;
+		}
+		return node.references.some((child) => this.containsNode(child, searchNode));
 	}
 }
 

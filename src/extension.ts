@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { FolderData, FolderItem, TreeData, TreeNode } from './tree/tree_item';
+import { FolderData, FolderItem, TreeNode } from './tree/tree_item';
 import { TreeController } from './tree_controller';
 import { updateDecorations } from './decorator';
 import { dumpTree, parseTree } from './tree/tree_parser';
@@ -28,11 +28,6 @@ export function activate(context: vscode.ExtensionContext) {
 	let tree = new FoldersTreeDataProvider(treeItems);
 	let controller = new TreeController(tree);
 
-	const uri = vscode.window.activeTextEditor.document.uri;
-	// console.log(uri);
-	// console.log(uri.toString());
-	// console.log(vscode.Uri.parse(uri.toString()));
-
 	context.subscriptions.push(
 		// vscode.window.registerTreeDataProvider('powersearch-explorer.folders', tree),
 		vscode.window.createTreeView('powersearch-explorer.folders', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true, dragAndDropController: tree }),
@@ -49,7 +44,10 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityShow', (item: FolderItem) => tree.toggleVisibility(item)),
 		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityHide', (item: FolderItem) => tree.toggleVisibility(item)),
 
-		vscode.commands.registerCommand("powersearch.removeData", async (folder, _) => deleteTreeItems(context)),
+		vscode.commands.registerCommand("powersearch.removeData", async (folder, _) => {
+			tree.clear();
+			return deleteTreeItems(context);
+		}),
 		vscode.commands.registerCommand("powersearch.selectFolder", (folder, _) => controller.onSelectFolder(folder)),
 		vscode.commands.registerCommand("powersearch.saveTree", async () => {
 			return saveTreeItems(context, tree.getNodes());
