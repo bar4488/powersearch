@@ -1,36 +1,36 @@
-# powersearch README
+# PowerSearch
 
-This is the README for your extension "powersearch". After writing up a brief description, we recommend including the following sections.
+PowerSearch is a VS Code extension for grouping and coloring source ranges. It stores workspace-visible state in `.powersearch` using a sharded format designed for large numbers of ranges.
 
-## Features
+## Development
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+Install dependencies:
 
-For example if there is an image subfolder under your extension project workspace:
+```sh
+npm ci
+```
 
-\!\[feature X\]\(images/feature-x.png\)
+Run checks:
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+```sh
+npm run compile
+npm run lint
+npm test
+```
 
-## Requirements
+## Run The Extension From The CLI
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+Compile the extension and open VS Code with this checkout loaded as the development extension:
 
-## Extension Settings
+```sh
+npm run compile
+code --new-window --extensionDevelopmentPath="$PWD" "$PWD"
+```
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+From outside the repo, use absolute paths:
 
-For example:
+```sh
+npm run compile
+code --new-window --extensionDevelopmentPath=/path/to/powersearch /path/to/workspace
+```
 
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.

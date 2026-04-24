@@ -35,10 +35,6 @@
         "title": "Powersearch: Color Symbol"
       },
       {
-        "command": "powersearch.addSearchResults",
-        "title": "Powersearch: Add Search Results to Folders"
-      },
-      {
         "command": "powersearch.addFolder",
         "title": "Add a new folder",
         "icon": {
@@ -59,12 +55,8 @@
         "title": "Powersearch: Remove Data"
       },
       {
-        "command": "powersearch.recolor",
-        "title": "Powersearch: Recolor"
-      },
-      {
         "command": "powersearch.saveTree",
-        "title": "Powersearch: Save Refs"
+        "title": "Powersearch: Save"
       },
       {
         "command": "powersearch.chooseFolderColor",
@@ -82,18 +74,13 @@
         "icon": "resources/bin.svg"
       },
       {
-        "command": "powersearch.selectFolder",
-        "title": "Remove Folder",
-        "icon": "resources/bin.svg"
-      },
-      {
         "command": "powersearch.toggleFolderVisibilityHide",
-        "title": "Toggle Visibility Hide",
+        "title": "Hide Folder",
         "icon": "$(eye)"
       },
       {
         "command": "powersearch.toggleFolderVisibilityShow",
-        "title": "Toggle Visibility",
+        "title": "Show Folder",
         "icon": "$(eye-closed)"
       }
     ],
@@ -123,11 +110,6 @@
         {
           "command": "powersearch.renameFolder",
           "when": "viewItem == visibleFolder || viewItem == hiddenFolder"
-        },
-        {
-          "command": "powersearch.removeFolder",
-          "when": "viewItem == reference",
-          "group": "inline"
         },
         {
           "command": "powersearch.removeFolder",

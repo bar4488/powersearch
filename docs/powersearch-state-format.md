@@ -1,135 +1,159 @@
 # PowerSearch State Format
 
-PowerSearch stores workspace data in `.powersearch/state.json` at the root of the first VS Code workspace folder. The file is intentionally plain JSON so it can be inspected, backed up, committed, reviewed, or shared with the workspace.
+PowerSearch stores all durable data in a visible `.powersearch` folder. The format is designed for large numbers of ranges: startup loads small metadata files, while range data is sharded by workspace folder and source file.
 
-## File Location
+No current-format file stores absolute workspace paths or absolute source-file paths. Source locations are represented by a VS Code workspace-folder name plus a relative file path.
+
+## Directory Layout
 
 ```text
-<workspace-root>/.powersearch/state.json
+<chosen-workspace-folder>/.powersearch/
+  manifest.json
+  folders.json
+  ui.json
+  indexes/
+    files.json
+  ranges/
+    <workspace-folder-name>/
+      <hash-prefix>/
+        <file-hash>.json
 ```
 
-For multi-root VS Code workspaces, the current implementation uses the first workspace folder returned by VS Code.
+In a single-folder workspace, PowerSearch creates `.powersearch` in that folder. In a multi-root workspace, PowerSearch prompts the user to choose which workspace folder owns `.powersearch`. If exactly one workspace folder already contains PowerSearch data, that folder is used automatically.
 
-## Versioning
+Workspace folder names must be unique. This keeps source references portable without storing absolute paths.
 
-Every state file includes a `schemaVersion`. Readers must reject unsupported versions instead of silently guessing.
+## `manifest.json`
 
-Current version:
+Tracks schema version, storage ownership, and workspace-folder identities.
 
 ```json
 {
-  "schemaVersion": 1
+  "schemaVersion": 2,
+  "createdAt": "2026-04-24T15:00:00.000Z",
+  "updatedAt": "2026-04-24T15:30:00.000Z",
+  "storageWorkspace": "frontend",
+  "workspaces": [
+    { "id": "frontend", "name": "frontend" },
+    { "id": "backend", "name": "backend" }
+  ]
 }
 ```
 
-## Top-Level Shape
+## `folders.json`
+
+Stores only the UI folder tree. It does not contain ranges.
 
 ```json
 {
-  "schemaVersion": 1,
-  "savedAt": "2026-04-24T15:30:00.000Z",
-  "tree": {
-    "type": "root",
-    "children": []
-  },
-  "ui": {
-    "selectedFolderPath": null
-  }
-}
-```
-
-Fields:
-
-- `schemaVersion`: numeric schema version. Currently `1`.
-- `savedAt`: ISO-8601 UTC timestamp of the last save.
-- `tree`: root tree node. The root itself is not shown as a folder in the UI.
-- `ui`: persistent UI state that should follow the workspace.
-
-## Tree Nodes
-
-`tree.children` contains folder and reference nodes.
-
-### Folder Node
-
-```json
-{
-  "type": "folder",
-  "name": "Default",
-  "children": [],
-  "location": {
-    "uriString": "file:///workspace/src/example.ts",
-    "range": {
-      "start": { "line": 10, "character": 4 },
-      "end": { "line": 10, "character": 11 }
+  "schemaVersion": 2,
+  "folders": [
+    {
+      "id": "fld_2e3c...",
+      "name": "Default",
+      "color": "#ffff00",
+      "isHidden": false,
+      "expanded": true,
+      "children": [
+        {
+          "id": "fld_9a10...",
+          "name": "API",
+          "color": "#0074D9",
+          "isHidden": false,
+          "expanded": false,
+          "children": []
+        }
+      ]
     }
-  },
-  "color": "#ffff00",
-  "isHidden": false,
-  "expanded": true
+  ]
 }
 ```
 
-Fields:
+Folder IDs are stable identifiers. Ranges point to `folderId`, so folders can be renamed without rewriting all range shards.
 
-- `type`: always `"folder"`.
-- `name`: display name.
-- `children`: nested folder/reference nodes.
-- `location`: optional source location for folders created from a symbol.
-- `color`: optional decoration color in hex format.
-- `isHidden`: optional visibility flag. Missing means visible.
-- `expanded`: optional tree expansion flag. Missing means collapsed.
+## `ui.json`
 
-### Reference Node
+Stores persistent UI state.
 
 ```json
 {
-  "type": "ref",
-  "location": {
-    "uriString": "file:///workspace/src/example.ts",
-    "range": {
-      "start": { "line": 10, "character": 4 },
-      "end": { "line": 10, "character": 11 }
+  "schemaVersion": 2,
+  "selectedFolderId": "fld_2e3c..."
+}
+```
+
+`selectedFolderId` may be `null`.
+
+## `indexes/files.json`
+
+Indexes range shards without loading every shard at startup.
+
+```json
+{
+  "schemaVersion": 2,
+  "updatedAt": "2026-04-24T15:30:00.000Z",
+  "workspaces": [
+    {
+      "workspaceFolder": "frontend",
+      "files": [
+        {
+          "path": "src/components/Button.tsx",
+          "shard": "ranges/frontend/8f/8f21b2c9.json",
+          "rangeCount": 2,
+          "folderCounts": {
+            "fld_2e3c...": 1,
+            "fld_9a10...": 1
+          }
+        }
+      ]
     }
-  }
+  ]
 }
 ```
 
-Fields:
+The index is an optimization and discovery aid. The source of truth for ranges remains the shard file listed by `shard`.
 
-- `type`: always `"ref"`.
-- `location`: target document URI and text range.
+## Range Shards
 
-## Location Format
-
-Locations use VS Code URI strings and zero-based line/character ranges:
+Each source file has one range shard.
 
 ```json
 {
-  "uriString": "file:///workspace/src/example.ts",
-  "range": {
-    "start": { "line": 10, "character": 4 },
-    "end": { "line": 10, "character": 11 }
-  }
+  "schemaVersion": 2,
+  "workspaceFolder": "frontend",
+  "path": "src/components/Button.tsx",
+  "ranges": [
+    {
+      "id": "rng_f1a2...",
+      "folderId": "fld_2e3c...",
+      "range": {
+        "start": { "line": 12, "character": 4 },
+        "end": { "line": 12, "character": 18 }
+      }
+    }
+  ]
 }
 ```
 
-## UI State
+Runtime resolution is:
 
-```json
-{
-  "selectedFolderPath": [0, 2]
-}
+```text
+workspace folder named <workspaceFolder> + relative <path>
 ```
 
-`selectedFolderPath` identifies the selected folder by child indexes from the root. `null` means no selected folder. This is intentionally a UI hint, not a permanent node ID; if the tree is manually edited and the path no longer points to a folder, PowerSearch ignores it.
+Files outside the open workspace cannot be represented in the current format and are skipped with a warning.
+
+## Performance Model
+
+- Startup reads `manifest.json`, `folders.json`, `ui.json`, and `indexes/files.json`.
+- Decorations for an editor read only that editor's range shard.
+- Adding a range rewrites only one shard and the small file index.
+- Renaming, recoloring, hiding, or expanding folders rewrites only `folders.json` and `ui.json`.
+- Deleting a folder removes ranges for that folder from affected shards and updates the index.
 
 ## Compatibility Rules
 
-- Unknown fields should be preserved by future migrations when practical.
-- Missing optional fields should use conservative defaults.
 - Unsupported `schemaVersion` values should fail closed with a warning.
-- Broken references should stay in the file. The UI may mark them as broken, but should not remove them without an explicit user action.
-
-## Legacy Migration
-
-Earlier versions stored tree data in VS Code `workspaceState`, which is hidden local storage. On first load, if `.powersearch/state.json` does not exist and legacy `workspaceState` data is present, PowerSearch migrates that data into `.powersearch/state.json` and clears the legacy key.
+- Unknown optional fields should be preserved by migrations when practical.
+- Broken file references should remain in shard files until the user explicitly removes or repairs them.
+- Legacy absolute-URI state is migrated only when the referenced files are inside the open workspace. The migrated current-format files contain workspace-folder names and relative paths only.

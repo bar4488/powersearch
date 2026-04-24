@@ -1,55 +1,38 @@
 import * as vscode from 'vscode';
-import { ParentNode, ReferenceItem, RootItem, FolderItem, TreeNode, createFolderItem } from './tree_item';
-import { createDecorationFromColor, nodeToIndices, getPreviewChunks, setFolderDecoration, indicesToNode } from '../utils';
-import { disposeDecorations, updateDecorations } from '../decorator';
+import { FolderItem, ParentNode, RootItem, TreeNode, createFolderItem } from './tree_item';
+import { folderAndAncestorsVisible, indicesToNode, nodeToIndices } from '../utils';
 
 export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
 	private readonly _onDidChange = new vscode.EventEmitter<undefined>();
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
-	private root: RootItem;
+	private readonly root: RootItem;
+	private selectedFolder: FolderItem | undefined;
 
-	private selectedFolder: FolderItem;
-
-	constructor(children: TreeNode[]) {
-		this.root = { type: 'root', references: children };
-		for (var child of children) {
+	constructor(children: FolderItem[]) {
+		this.root = { type: 'root', children };
+		for (const child of children) {
 			child.parent = this.root;
 		}
-		updateDecorations(children);
 		this._onDidChange.fire(undefined);
 	}
 
-	private findOrCreateSelectedFolder() {
-		for (var element of this.root.references) {
-			if (element.type === 'folder' && element.name === 'Default') {
-				this.selectedFolder = element;
-			}
-		}
-		if (this.selectedFolder === undefined) {
-			this.selectedFolder = createFolderItem({
-				name: "Default", references: [],
-			});
-			this.addNode(this.selectedFolder);
-		}
-	}
+	dropMimeTypes = ['application/powersearch.folder'];
+	dragMimeTypes = ['application/powersearch.folder'];
 
-	dropMimeTypes = ['application/powersearch'];
-	dragMimeTypes = ['application/powersearch'];
-
-	public async handleDrop(target: TreeNode | undefined, sources: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
-		const transferItem = sources.get('application/powersearch');
+	public async handleDrop(target: TreeNode | undefined, sources: vscode.DataTransfer): Promise<void> {
+		const transferItem = sources.get('application/powersearch.folder');
 		if (!transferItem) {
 			return;
 		}
-		const indicesList: number[][] = transferItem.value;
+		const indicesList = transferItem.value as number[][];
 		if (indicesList.length === 0) {
 			return;
 		}
-		// build tree
-		let nodes: TreeNode[] = [];
-		for (var nodeIndices of transferItem.value) {
+
+		const nodes: FolderItem[] = [];
+		for (const nodeIndices of indicesList) {
 			const node = indicesToNode(nodeIndices, this.root);
 			if (!node) {
 				return;
@@ -57,237 +40,132 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			nodes.push(node);
 		}
 
-		// if target is reference, take parent
-		let targetNode = target ?? this.root;
-		targetNode = targetNode.type === 'ref' ? targetNode.parent : targetNode;
-
+		const targetNode = target ?? this.root;
 		if (targetNode === nodes[0].parent) {
-			// we do not want to remove anything
-			return;
-		}
-		if (targetNode.type === 'root' && nodes.some((node) => node.type === 'ref')) {
-			vscode.window.showInformationMessage("References must stay inside folders.");
 			return;
 		}
 		if (nodes.some((node) => this.containsNode(node, targetNode))) {
-			vscode.window.showInformationMessage("Cannot move a folder into itself.");
+			vscode.window.showWarningMessage("Cannot move a folder into itself.");
 			return;
 		}
-		nodes[0].parent.references = nodes[0].parent.references.filter((n) => !nodes.includes(n));
 
-		targetNode.references.push(...nodes);
-		for (let node of nodes) {
+		nodes[0].parent.children = nodes[0].parent.children.filter((node) => !nodes.includes(node));
+		targetNode.children.push(...nodes);
+		for (const node of nodes) {
 			node.parent = targetNode;
 		}
-		updateDecorations(this.root.references);
 		this.updateTree();
 	}
 
-	/**
-	 * Handles drag event. Only drags where all nodes have the same parent are allowed.
-	 * The indices of the dragged nodes are stored in the data transfer object.
-	 * @param source The nodes to be dragged.
-	 * @param treeDataTransfer The data transfer object.
-	 * @param token A cancellation token.
-	 */
-	public async handleDrag(source: TreeNode[], treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+	public async handleDrag(source: TreeNode[], treeDataTransfer: vscode.DataTransfer): Promise<void> {
 		if (source.length === 0) {
 			return;
 		}
-		// allow only drags where all nodes have the same parent
-		const p = source[0].parent;
-		if (source.filter((n) => n.parent !== p).length !== 0) {
+		const parent = source[0].parent;
+		if (source.some((node) => node.parent !== parent)) {
 			return;
 		}
 
-		// calculate indices
-		let sourceIndices = [];
-		for (var s of source) {
-			let indices = nodeToIndices(s);
-			if (indices === undefined) {
-				continue;
-			}
-			sourceIndices.push(indices);
-		}
-		treeDataTransfer.set('application/powersearch', new vscode.DataTransferItem(sourceIndices));
+		const sourceIndices = source
+			.map((node) => nodeToIndices(node))
+			.filter((indices): indices is number[] => indices !== undefined);
+		treeDataTransfer.set('application/powersearch.folder', new vscode.DataTransferItem(sourceIndices));
 	}
 
 	dispose(): void {
 		this._onDidChange.dispose();
 	}
 
-	private updateTree() {
-		vscode.commands.executeCommand("powersearch.saveTree");
-		this._onDidChange.fire(undefined);
+	public getNodes(): FolderItem[] {
+		return this.root.children;
 	}
 
-	public getNodes() {
-		return this.root.references;
+	public getSelectedFolderId(): string | null {
+		return this.selectedFolder?.id ?? null;
 	}
 
-	public getSelectedFolderPath(): number[] | null {
-		if (!this.selectedFolder) {
-			return null;
-		}
-		return nodeToIndices(this.selectedFolder) ?? null;
-	}
-
-	public restoreSelectedFolder(path: number[] | null) {
-		if (!path) {
+	public restoreSelectedFolder(folderId: string | null) {
+		if (!folderId) {
 			return;
 		}
-		const node = indicesToNode(path, this.root);
-		if (node?.type === 'folder') {
-			this.selectedFolder = node;
+		this.selectedFolder = this.findFolder(folderId);
+	}
+
+	public getOrCreateSelectedFolder(): FolderItem {
+		if (this.selectedFolder) {
+			return this.selectedFolder;
 		}
+		const existingDefault = this.root.children.find((folder) => folder.name === 'Default');
+		if (existingDefault) {
+			this.selectedFolder = existingDefault;
+			return existingDefault;
+		}
+		const defaultFolder = createFolderItem({ name: 'Default', color: '#ffff00', children: [], expanded: true });
+		this.addNode(defaultFolder);
+		this.selectedFolder = defaultFolder;
+		return defaultFolder;
+	}
+
+	public getFolder(folderId: string): FolderItem | undefined {
+		return this.findFolder(folderId);
+	}
+
+	public getVisibleColoredFolders(): Map<string, string> {
+		const result = new Map<string, string>();
+		for (const folder of this.flattenFolders()) {
+			if (folder.color && folderAndAncestorsVisible(folder)) {
+				result.set(folder.id, folder.color);
+			}
+		}
+		return result;
 	}
 
 	public clear() {
-		disposeDecorations(this.root.references);
-		this.root.references = [];
+		this.root.children = [];
 		this.selectedFolder = undefined;
 		this._onDidChange.fire(undefined);
 	}
 
-	public addNode(node: TreeNode, parent: ParentNode = undefined) {
-		if (parent === undefined) {
-			parent = this.root;
-		}
+	public addNode(node: FolderItem, parent: ParentNode = this.root) {
 		node.parent = parent;
-		// push at start of references
-		parent.references = [node, ...parent.references];
-
-		if (node.type === 'folder') {
-			setFolderDecoration(node);
-		}
-		else if (parent !== this.root) {
-			updateDecorations([parent as FolderItem]);
-		}
+		parent.children = [node, ...parent.children];
 		this.updateTree();
 	}
 
-	public addNodeToSelectedFolder(node: ReferenceItem) {
-		if (this.selectedFolder === undefined) {
-			this.findOrCreateSelectedFolder();
-		}
-		node.parent = this.selectedFolder;
-		this.selectedFolder.expanded = true;
-		this.selectedFolder.references.push(node);
-		updateDecorations([this.selectedFolder]);
-		this.updateTree();
-	}
-
-	public removeNode(node: TreeNode) {
-		disposeDecorations([node]);
-
-		// make sure to remove selected tag if its a child of the deleted node
-		if (this.findInChildren(node, this.selectedFolder)) {
+	public removeNode(node: FolderItem): Set<string> {
+		const removedFolderIds = new Set(this.flattenFolders(node).map((folder) => folder.id));
+		if (this.selectedFolder && removedFolderIds.has(this.selectedFolder.id)) {
 			this.selectedFolder = undefined;
 		}
-
-		// remove from parent
-		if (!!node.parent) {
-			node.parent.references = node.parent.references.filter((t) => t !== node);
-		}
-		else {
-			// should not happen
-			console.error("node has no parent");
-		}
-		// update decorations
-		if (node.type === "ref" && !!node.parent) {
-			updateDecorations([node.parent as TreeNode]);
-		}
+		node.parent.children = node.parent.children.filter((child) => child !== node);
 		this.updateTree();
+		return removedFolderIds;
 	}
 
-	private findInChildren(node: TreeNode, searchNode) {
-		if (node === searchNode) {
-			return true;
-		}
-		if (node.type === 'ref') {
-			return false;
-		}
-		for (var child of node.references) {
-			if (this.findInChildren(child, searchNode)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	public async selectFolder(element: TreeNode) {
-		if (element.type === 'folder') {
-			this.selectedFolder = element;
-			this.selectedFolder.expanded = true;
-			this.updateTree();
-		}
-		else {
-			const { range } = element.location;
-			try {
-				await vscode.commands.executeCommand("vscode.open", element.location.uri, <vscode.TextDocumentShowOptions>{ selection: range.with({ end: range.start }) });
-			}
-			catch {
-				vscode.window.showInformationMessage(`Could not open reference: ${vscode.workspace.asRelativePath(element.location.uri)}`);
-			}
-		}
+	public selectFolder(folder: FolderItem) {
+		this.selectedFolder = folder;
+		this.selectedFolder.expanded = true;
+		this.updateTree();
 	}
 
 	async getTreeItem(element: TreeNode) {
-		let result: vscode.TreeItem;
-		if (element.type === 'folder') {
-			// files
-			result = new vscode.TreeItem(element.name);
-			result.contextValue = element.isHidden ? 'hiddenFolder' : 'visibleFolder';
-			result.description = true;
-			result.iconPath = vscode.ThemeIcon.Folder;
-			result.collapsibleState = element.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
-			// when a user presses a folder, select it
-		} else {
-			// references
-			const { range } = element.location;
-			const description = vscode.workspace.asRelativePath(element.location.uri);
-			try {
-				const doc = await vscode.workspace.openTextDocument(element.location.uri);
-				const { before, inside, after } = getPreviewChunks(doc, range);
-
-				const label: vscode.TreeItemLabel = {
-					label: before + inside + after,
-					highlights: [[before.length, before.length + inside.length]]
-				};
-
-				result = new vscode.TreeItem(label);
-			}
-			catch {
-				result = new vscode.TreeItem(`Missing reference: ${description}`);
-			}
-			result.collapsibleState = vscode.TreeItemCollapsibleState.None;
-			result.contextValue = 'reference';
-			result.description = description;
-			result.tooltip = result.description;
-		}
+		const result = new vscode.TreeItem(element.name);
+		result.contextValue = element.isHidden ? 'hiddenFolder' : 'visibleFolder';
+		result.description = element.color;
+		result.iconPath = new vscode.ThemeIcon('folder');
+		result.collapsibleState = element.children.length === 0
+			? vscode.TreeItemCollapsibleState.None
+			: element.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
 		result.command = {
 			command: 'powersearch.selectFolder',
-			title: "Select Folder",
-			arguments: [
-				element
-			]
+			title: 'Select Folder',
+			arguments: [element],
 		};
 		return result;
 	}
 
 	public setFolderColor(folder: FolderItem, color: string | undefined) {
-		if (!!folder.decoration) {
-			folder.decoration.dispose();
-			folder.decoration = undefined;
-			folder.color = undefined;
-		}
-		if (color === undefined) {
-			this.updateTree();
-			return;
-		}
-		folder.decoration = createDecorationFromColor(color);
 		folder.color = color;
-		updateDecorations([folder]);
 		this.updateTree();
 	}
 
@@ -296,7 +174,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	}
 
 	public setExpanded(element: TreeNode, expanded: boolean) {
-		if (element.type !== 'folder' || element.expanded === expanded) {
+		if (element.expanded === expanded) {
 			return;
 		}
 		element.expanded = expanded;
@@ -305,13 +183,9 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	async getChildren(element?: TreeNode) {
 		if (element === undefined) {
-			return this.root.references;
+			return this.root.children;
 		}
-		if (element.type === 'folder') {
-			// sort folders first and then files
-			return element.references.sort((a, b) => a.type === 'folder' ? -1 : b.type === 'folder' ? 1 : 0);
-		}
-		return undefined;
+		return element.children;
 	}
 
 	getParent(element: TreeNode) {
@@ -320,24 +194,27 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	toggleVisibility(item: FolderItem) {
 		item.isHidden = !item.isHidden;
-		if (item.isHidden) {
-			disposeDecorations([item]);
-		}
-		else {
-			updateDecorations([item]);
-		}
 		this.updateTree();
 	}
 
-	private containsNode(node: TreeNode, searchNode: TreeNode | RootItem) {
+	private updateTree() {
+		vscode.commands.executeCommand("powersearch.saveTree");
+		this._onDidChange.fire(undefined);
+	}
+
+	private findFolder(folderId: string): FolderItem | undefined {
+		return this.flattenFolders().find((folder) => folder.id === folderId);
+	}
+
+	private flattenFolders(root: FolderItem | RootItem = this.root): FolderItem[] {
+		const children = root.children;
+		return children.flatMap((folder) => [folder, ...this.flattenFolders(folder)]);
+	}
+
+	private containsNode(node: FolderItem, searchNode: FolderItem | RootItem) {
 		if (node === searchNode) {
 			return true;
 		}
-		if (node.type === 'ref') {
-			return false;
-		}
-		return node.references.some((child) => this.containsNode(child, searchNode));
+		return node.children.some((child) => this.containsNode(child, searchNode));
 	}
 }
-
-

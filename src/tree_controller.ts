@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
+import { DecorationManager } from './decorator';
+import { PowerSearchStorage } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { createDecorationFromColor, isValidColor } from './utils';
-import { FolderItem, TreeNode, createReferenceItem, createFolderItem } from './tree/tree_item';
+import { FolderItem, createFolderItem } from './tree/tree_item';
+import { isValidColor } from './utils';
 
 const defaultColors = [
     { 'name': 'Navy', 'value': '#001f3f' },
@@ -24,12 +26,16 @@ const defaultColors = [
 ];
 
 export class TreeController {
-    constructor(private tree: FoldersTreeDataProvider) { }
+    constructor(
+        private readonly tree: FoldersTreeDataProvider,
+        private readonly storage: PowerSearchStorage,
+        private readonly decorations: DecorationManager,
+    ) { }
 
     public async onColorSymbol() {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
-            vscode.window.showInformationMessage("Open an editor before coloring a symbol.");
+            vscode.window.showWarningMessage("Open an editor before coloring a symbol.");
             return;
         }
 
@@ -37,55 +43,51 @@ export class TreeController {
         const basePosition = editor.selection.anchor;
         const baseRange = doc.getWordRangeAtPosition(basePosition);
         if (!baseRange) {
-            vscode.window.showInformationMessage("No symbol found at the current cursor position.");
+            vscode.window.showWarningMessage("No symbol found at the current cursor position.");
             return;
         }
 
         const refs = await vscode.commands.executeCommand<vscode.Location[]>('vscode.executeReferenceProvider', doc.uri, basePosition) ?? [];
-        if (refs.length > 0) {
-            const content = doc.getText(baseRange);
-            const folder: FolderItem = createFolderItem({
-                name: content,
-                location: new vscode.Location(doc.uri, baseRange),
-                references: refs.map((t) => createReferenceItem({ location: t })),
-                color: "#ffff00",
-                decoration: createDecorationFromColor("#ffff00"),
-            });
-            folder.references.forEach((t) => t.parent = folder);
-            this.tree.addNode(folder);
+        if (refs.length === 0) {
+            vscode.window.showWarningMessage("No references found for the selected symbol.");
+            return;
         }
-        else {
-            vscode.window.showInformationMessage("No references found for the selected symbol.");
-        }
+
+        const folder = createFolderItem({
+            name: doc.getText(baseRange),
+            color: "#ffff00",
+            expanded: true,
+            children: [],
+        });
+        this.tree.addNode(folder);
+        await this.addLocationsToFolder(refs, folder);
     }
 
     public async onColorSelection() {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
-            vscode.window.showInformationMessage("Open an editor before coloring a selection.");
+            vscode.window.showWarningMessage("Open an editor before coloring a selection.");
             return;
         }
 
-        const doc = editor.document;
         const selection = editor.selection;
         if (selection.isEmpty) {
-            vscode.window.showInformationMessage("Select text before coloring a selection.");
+            vscode.window.showWarningMessage("Select text before coloring a selection.");
             return;
         }
-        this.tree.addNodeToSelectedFolder(createReferenceItem({ location: new vscode.Location(doc.uri, selection) }));
+
+        await this.addLocationsToFolder([new vscode.Location(editor.document.uri, selection)], this.tree.getOrCreateSelectedFolder());
     }
 
     public async onColorLine() {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
-            vscode.window.showInformationMessage("Open an editor before coloring a line.");
+            vscode.window.showWarningMessage("Open an editor before coloring a line.");
             return;
         }
 
-        const doc = editor.document;
-        const basePosition = editor.selection.anchor;
-        const lineRange = new vscode.Range(basePosition.with(undefined, 0), basePosition.translate(0, 1000));
-        this.tree.addNodeToSelectedFolder(createReferenceItem({ location: new vscode.Location(doc.uri, lineRange) }));
+        const lineRange = editor.document.lineAt(editor.selection.anchor.line).range;
+        await this.addLocationsToFolder([new vscode.Location(editor.document.uri, lineRange)], this.tree.getOrCreateSelectedFolder());
     }
 
     public async onChangeFolderColor(folder: FolderItem) {
@@ -95,6 +97,7 @@ export class TreeController {
         }
         if (choice === 'None') {
             this.tree.setFolderColor(folder, undefined);
+            await this.decorations.updateVisibleEditors();
             return;
         }
 
@@ -103,7 +106,7 @@ export class TreeController {
         if (idx === -1) {
             color = await vscode.window.showInputBox({ prompt: "Write a color in #xxxxxx format" });
             if (!isValidColor(color)) {
-                vscode.window.showInformationMessage("Invalid color format!");
+                vscode.window.showWarningMessage("Invalid color format.");
                 return;
             }
         }
@@ -112,10 +115,11 @@ export class TreeController {
         }
 
         this.tree.setFolderColor(folder, color);
+        await this.decorations.updateVisibleEditors();
     }
 
     public async onRenameFolder(folder: FolderItem) {
-        let newName = await vscode.window.showInputBox({ prompt: "Enter folder name" });
+        let newName = await vscode.window.showInputBox({ prompt: "Enter folder name", value: folder.name });
         if (!newName) {
             return;
         }
@@ -124,24 +128,36 @@ export class TreeController {
         this.tree.updateNode(folder);
     }
 
-    public async onSelectFolder(node: TreeNode) {
-        this.tree.selectFolder(node);
+    public async onSelectFolder(folder: FolderItem) {
+        this.tree.selectFolder(folder);
     }
 
-    public onRemoveFolder(folder: FolderItem) {
-        if (folder.decoration !== undefined) {
-            folder.decoration.dispose();
-        }
-        this.tree.removeNode(folder);
+    public async onRemoveFolder(folder: FolderItem) {
+        const removedFolderIds = this.tree.removeNode(folder);
+        await this.storage.removeRangesForFolders(removedFolderIds);
+        await this.decorations.updateVisibleEditors();
     }
 
-    public async onAddFolder(folder: FolderItem) {
+    public async onAddFolder(folder?: FolderItem) {
         let newName = await vscode.window.showInputBox({ prompt: "Enter folder name" });
         if (!newName) {
             return;
         }
-        else {
-            this.tree.addNode(createFolderItem({ name: newName, references: [] }), folder);
+        this.tree.addNode(createFolderItem({ name: newName, children: [] }), folder);
+    }
+
+    public async onToggleFolderVisibility(folder: FolderItem) {
+        this.tree.toggleVisibility(folder);
+        await this.decorations.updateVisibleEditors();
+    }
+
+    private async addLocationsToFolder(locations: vscode.Location[], folder: FolderItem): Promise<void> {
+        const result = await this.storage.addRanges(locations, folder.id);
+        if (result.added > 0) {
+            await this.decorations.updateVisibleEditors();
+        }
+        if (result.skippedOutsideWorkspace > 0) {
+            vscode.window.showWarningMessage(`Skipped ${result.skippedOutsideWorkspace} reference(s) outside the current workspace.`);
         }
     }
 }
