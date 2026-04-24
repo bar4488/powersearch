@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
-import { FolderItem, PositionData, RootItem, TreeNode } from './tree/tree_item';
+import { FolderItem, PositionData, RootItem } from './tree/tree_item';
 
 export function positionFrom(positionData: PositionData) {
     return new vscode.Position(positionData.line, positionData.character);
 }
 
-export function nodeToIndices(node: TreeNode): number[] | undefined {
+export function nodeToIndices(node: FolderItem): number[] | undefined {
     let indices = [];
-    let curr: TreeNode | RootItem = node;
+    let curr: FolderItem | RootItem = node;
     while (curr.type !== 'root') {
         const idx = curr.parent.children.indexOf(curr);
         if (idx === -1) {
@@ -19,8 +19,8 @@ export function nodeToIndices(node: TreeNode): number[] | undefined {
     return indices.reverse();
 }
 
-export function indicesToNode(indices: number[], root: RootItem): TreeNode | undefined {
-    let curr: TreeNode | undefined;
+export function indicesToNode(indices: number[], root: RootItem): FolderItem | undefined {
+    let curr: FolderItem | undefined;
     let children = root.children;
     for (var idx of indices) {
         curr = children[idx];

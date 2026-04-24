@@ -8,6 +8,7 @@ export function parseTree(root: FolderData, parent: FolderItem | undefined = und
         isHidden: root.isHidden,
         expanded: root.expanded,
         children: [],
+        references: [],
         parent,
     });
     rootItem.children = root.children.map((child) => parseTree(child, rootItem));

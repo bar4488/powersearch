@@ -1,6 +1,6 @@
 # PowerSearch
 
-PowerSearch is a VS Code extension for grouping and coloring source ranges. It stores workspace-visible state in `.powersearch` using a sharded format designed for large numbers of ranges.
+PowerSearch is a VS Code extension for grouping and coloring source ranges. It stores workspace-visible state in `.powersearch` using a sharded format designed for large numbers of ranges, with lightweight per-folder range indexes for the tree and per-file shards for the actual range payload.
 
 ## Development
 
@@ -33,4 +33,3 @@ From outside the repo, use absolute paths:
 npm run compile
 code --new-window --extensionDevelopmentPath=/path/to/powersearch /path/to/workspace
 ```
-

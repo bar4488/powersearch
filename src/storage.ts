@@ -1,12 +1,13 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { FolderData, FolderItem, StoredRange, createFolderItem, createId, rangeToData } from './tree/tree_item';
+import { FolderData, FolderItem, ReferenceItem, StoredRange, StoredRangeReference, createFolderItem, createId, createReferenceItem, rangeFromData, rangeToData } from './tree/tree_item';
 
 const STORAGE_DIRECTORY = '.powersearch';
 const MANIFEST_FILE = 'manifest.json';
 const FOLDERS_FILE = 'folders.json';
 const UI_FILE = 'ui.json';
 const FILES_INDEX = 'indexes/files.json';
+const FOLDER_RANGES_DIRECTORY = 'indexes/folders';
 const LEGACY_STATE_FILE = 'state.json';
 const LEGACY_WORKSPACE_STATE_KEY = 'treeData';
 const SCHEMA_VERSION = 2;
@@ -52,6 +53,12 @@ interface FileIndexEntry {
 	folderCounts: Record<string, number>;
 }
 
+interface FolderRangesFile {
+	schemaVersion: typeof SCHEMA_VERSION;
+	folderId: string;
+	ranges: StoredRangeReference[];
+}
+
 interface RangeShardFile {
 	schemaVersion: typeof SCHEMA_VERSION;
 	workspaceFolder: string;
@@ -71,11 +78,14 @@ export interface LoadedPowerSearchState {
 
 export interface AddRangesResult {
 	added: number;
+	addedReferences: StoredRangeReference[];
 	skippedOutsideWorkspace: number;
 }
 
 export class PowerSearchStorage {
 	private readonly rangeCache = new Map<string, RangeShardFile>();
+	private readonly rangeShardPathCache = new Map<string, RangeShardFile>();
+	private readonly folderRangesCache = new Map<string, FolderRangesFile>();
 	private index: FileIndex = emptyIndex();
 
 	private constructor(
@@ -122,8 +132,11 @@ export class PowerSearchStorage {
 			if (ui.schemaVersion !== SCHEMA_VERSION) {
 				throw new Error('Unsupported ui.json schema.');
 			}
+
+			const loadedFolders = folders.folders.map((folder) => deserializeFolder(folder));
+			await this.loadFolderReferencesIntoTree(loadedFolders);
 			return {
-				folders: folders.folders.map((folder) => deserializeFolder(folder)),
+				folders: loadedFolders,
 				selectedFolderId: ui.selectedFolderId,
 			};
 		}
@@ -166,8 +179,10 @@ export class PowerSearchStorage {
 		}
 
 		let added = 0;
+		const addedReferences: StoredRangeReference[] = [];
 		for (const entry of grouped.values()) {
 			const shard = await this.loadRangeShard(entry.key);
+			const shardPath = shardRelativePath(entry.key);
 			const existingRanges = new Set(shard.ranges.map(rangeIdentity));
 			let shardChanged = false;
 			for (const range of entry.ranges) {
@@ -176,11 +191,13 @@ export class PowerSearchStorage {
 				if (existingRanges.has(identity)) {
 					continue;
 				}
+				const id = createId('rng');
 				shard.ranges.push({
-					id: createId('rng'),
+					id,
 					folderId,
 					range: storedRange,
 				});
+				addedReferences.push({ id, shard: shardPath });
 				existingRanges.add(identity);
 				added += 1;
 				shardChanged = true;
@@ -190,12 +207,13 @@ export class PowerSearchStorage {
 			}
 		}
 
-		if (added > 0) {
+		if (addedReferences.length > 0) {
+			await this.addFolderReferences(folderId, addedReferences);
 			await this.writeIndex();
 			await this.touchManifest();
 		}
 
-		return { added, skippedOutsideWorkspace };
+		return { added, addedReferences, skippedOutsideWorkspace };
 	}
 
 	async getRangesForDocument(uri: vscode.Uri): Promise<StoredRange[]> {
@@ -207,9 +225,40 @@ export class PowerSearchStorage {
 		return shard.ranges;
 	}
 
+	async resolveReferenceLocation(reference: StoredRangeReference): Promise<vscode.Location | undefined> {
+		const shard = await this.loadRangeShardByRelativePath(reference.shard);
+		if (!shard) {
+			return undefined;
+		}
+		const range = shard.ranges.find((item) => item.id === reference.id);
+		if (!range) {
+			return undefined;
+		}
+		const uri = this.workspaceFileUri(shard.workspaceFolder, shard.path);
+		if (!uri) {
+			return undefined;
+		}
+		return new vscode.Location(uri, rangeFromData(range.range));
+	}
+
+	async removeDanglingReference(folderId: string, reference: StoredRangeReference): Promise<void> {
+		const index = await this.loadFolderRanges(folderId);
+		const nextRanges = index.ranges.filter((item) => !sameReference(item, reference));
+		if (nextRanges.length === index.ranges.length) {
+			return;
+		}
+		index.ranges = nextRanges;
+		await this.saveFolderRanges(index);
+		await this.touchManifest();
+	}
+
 	async removeRangesForFolders(folderIds: Set<string>): Promise<void> {
 		if (folderIds.size === 0) {
 			return;
+		}
+
+		for (const folderId of folderIds) {
+			await this.deleteFolderRanges(folderId);
 		}
 
 		let changed = false;
@@ -233,8 +282,8 @@ export class PowerSearchStorage {
 
 		if (changed) {
 			await this.writeIndex();
-			await this.touchManifest();
 		}
+		await this.touchManifest();
 	}
 
 	async clearAll(): Promise<void> {
@@ -248,6 +297,8 @@ export class PowerSearchStorage {
 		}
 		this.index = emptyIndex();
 		this.rangeCache.clear();
+		this.rangeShardPathCache.clear();
+		this.folderRangesCache.clear();
 		await this.context.workspaceState.update(LEGACY_WORKSPACE_STATE_KEY, undefined);
 		await this.initialize();
 	}
@@ -260,6 +311,7 @@ export class PowerSearchStorage {
 		await vscode.workspace.fs.createDirectory(this.storageRootUri());
 		await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.storageRootUri(), 'ranges'));
 		await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.storageRootUri(), 'indexes'));
+		await vscode.workspace.fs.createDirectory(this.folderRangesDirectoryUri());
 		const manifest = await this.readJson<ManifestFile | undefined>(this.manifestUri(), undefined);
 		if (!manifest) {
 			await this.writeManifest(new Date().toISOString());
@@ -269,6 +321,93 @@ export class PowerSearchStorage {
 			this.index = emptyIndex();
 			await this.writeIndex();
 		}
+	}
+
+	private async loadFolderReferencesIntoTree(folders: FolderItem[]): Promise<void> {
+		for (const folder of folders) {
+			folder.references = await this.loadFolderReferences(folder);
+			await this.loadFolderReferencesIntoTree(folder.children);
+		}
+	}
+
+	private async loadFolderReferences(folder: FolderItem): Promise<ReferenceItem[]> {
+		const index = await this.loadFolderRanges(folder.id);
+		const shardExists = new Map<string, boolean>();
+		const references: ReferenceItem[] = [];
+		const seen = new Set<string>();
+		let changed = false;
+
+		for (const reference of index.ranges) {
+			const identity = referenceIdentity(reference);
+			if (seen.has(identity)) {
+				changed = true;
+				continue;
+			}
+			seen.add(identity);
+
+			const existsForShard = shardExists.get(reference.shard);
+			const resolvedExists = existsForShard ?? await exists(this.relativeUri(reference.shard));
+			shardExists.set(reference.shard, resolvedExists);
+			if (!resolvedExists) {
+				changed = true;
+				continue;
+			}
+
+			references.push(createReferenceItem({ ...reference, parent: folder }));
+		}
+
+		if (changed) {
+			index.ranges = references.map(({ id, shard }) => ({ id, shard }));
+			await this.saveFolderRanges(index);
+		}
+		return references;
+	}
+
+	private async addFolderReferences(folderId: string, references: StoredRangeReference[]): Promise<void> {
+		if (references.length === 0) {
+			return;
+		}
+		const index = await this.loadFolderRanges(folderId);
+		const seen = new Set(index.ranges.map(referenceIdentity));
+		for (const reference of references) {
+			const identity = referenceIdentity(reference);
+			if (seen.has(identity)) {
+				continue;
+			}
+			index.ranges.push(reference);
+			seen.add(identity);
+		}
+		await this.saveFolderRanges(index);
+	}
+
+	private async loadFolderRanges(folderId: string): Promise<FolderRangesFile> {
+		const cached = this.folderRangesCache.get(folderId);
+		if (cached) {
+			return cloneFolderRanges(cached);
+		}
+
+		const ranges = await this.readJson<FolderRangesFile>(this.folderRangesUri(folderId), emptyFolderRanges(folderId));
+		if (ranges.schemaVersion !== SCHEMA_VERSION || ranges.folderId !== folderId || !Array.isArray(ranges.ranges)) {
+			const empty = emptyFolderRanges(folderId);
+			this.folderRangesCache.set(folderId, empty);
+			return cloneFolderRanges(empty);
+		}
+		this.folderRangesCache.set(folderId, ranges);
+		return cloneFolderRanges(ranges);
+	}
+
+	private async saveFolderRanges(ranges: FolderRangesFile): Promise<void> {
+		this.folderRangesCache.set(ranges.folderId, cloneFolderRanges(ranges));
+		if (ranges.ranges.length === 0) {
+			await this.deleteIfExists(this.folderRangesUri(ranges.folderId));
+			return;
+		}
+		await this.writeJson(this.folderRangesUri(ranges.folderId), ranges);
+	}
+
+	private async deleteFolderRanges(folderId: string): Promise<void> {
+		this.folderRangesCache.delete(folderId);
+		await this.deleteIfExists(this.folderRangesUri(folderId));
 	}
 
 	private async migrateLegacyStateIfNeeded(): Promise<void> {
@@ -309,6 +448,7 @@ export class PowerSearchStorage {
 					name: node.name ?? 'Folder',
 					color: node.color,
 					children: [],
+					references: [],
 					isHidden: node.isHidden ?? false,
 					expanded: node.expanded,
 					parent,
@@ -339,6 +479,14 @@ export class PowerSearchStorage {
 		};
 	}
 
+	private workspaceFileUri(workspaceFolderName: string, relativePath: string): vscode.Uri | undefined {
+		const workspaceFolder = vscode.workspace.workspaceFolders?.find((folder) => folder.name === workspaceFolderName);
+		if (!workspaceFolder) {
+			return undefined;
+		}
+		return vscode.Uri.joinPath(workspaceFolder.uri, ...relativePath.split('/'));
+	}
+
 	private async loadRangeShard(key: WorkspaceFileKey): Promise<RangeShardFile> {
 		const cacheKey = fileCacheKey(key);
 		const cached = this.rangeCache.get(cacheKey);
@@ -353,11 +501,36 @@ export class PowerSearchStorage {
 			path: key.path,
 			ranges: [],
 		};
-		const shard = indexEntry ? await this.readJson<RangeShardFile>(this.relativeUri(indexEntry.shard), emptyShard) : emptyShard;
-		if (shard.schemaVersion !== SCHEMA_VERSION || !Array.isArray(shard.ranges)) {
-			throw new Error(`Unsupported range shard schema for ${key.workspaceFolder}/${key.path}.`);
+		if (!indexEntry) {
+			this.rangeCache.set(cacheKey, emptyShard);
+			return emptyShard;
 		}
-		this.rangeCache.set(cacheKey, shard);
+
+		const shard = await this.loadRangeShardByRelativePath(indexEntry.shard);
+		if (!shard) {
+			this.removeIndexEntry(key);
+			await this.writeIndex();
+			this.rangeCache.set(cacheKey, emptyShard);
+			return emptyShard;
+		}
+		return shard;
+	}
+
+	private async loadRangeShardByRelativePath(shardPath: string): Promise<RangeShardFile | undefined> {
+		const cached = this.rangeShardPathCache.get(shardPath);
+		if (cached) {
+			return cached;
+		}
+
+		const shard = await this.readJson<RangeShardFile | undefined>(this.relativeUri(shardPath), undefined);
+		if (!shard) {
+			return undefined;
+		}
+		if (shard.schemaVersion !== SCHEMA_VERSION || !Array.isArray(shard.ranges)) {
+			throw new Error(`Unsupported range shard schema for ${shardPath}.`);
+		}
+		this.rangeShardPathCache.set(shardPath, shard);
+		this.rangeCache.set(fileCacheKey(shard), shard);
 		return shard;
 	}
 
@@ -365,6 +538,7 @@ export class PowerSearchStorage {
 		const shardPath = shardRelativePath({ workspaceFolder: shard.workspaceFolder, path: shard.path });
 		await this.writeJson(this.relativeUri(shardPath), shard);
 		this.rangeCache.set(fileCacheKey(shard), shard);
+		this.rangeShardPathCache.set(shardPath, shard);
 		this.upsertIndexEntry(shard, shardPath);
 	}
 
@@ -372,6 +546,7 @@ export class PowerSearchStorage {
 		const entry = this.findIndexEntry(shard);
 		if (entry) {
 			await this.deleteIfExists(this.relativeUri(entry.shard));
+			this.rangeShardPathCache.delete(entry.shard);
 		}
 		this.rangeCache.delete(fileCacheKey(shard));
 		this.removeIndexEntry(shard);
@@ -481,6 +656,14 @@ export class PowerSearchStorage {
 		return vscode.Uri.joinPath(this.storageRootUri(), FILES_INDEX);
 	}
 
+	private folderRangesDirectoryUri(): vscode.Uri {
+		return this.relativeUri(FOLDER_RANGES_DIRECTORY);
+	}
+
+	private folderRangesUri(folderId: string): vscode.Uri {
+		return this.relativeUri(folderRangesRelativePath(folderId));
+	}
+
 	private relativeUri(relativePath: string): vscode.Uri {
 		return vscode.Uri.joinPath(this.storageRootUri(), ...relativePath.split('/'));
 	}
@@ -508,6 +691,7 @@ function deserializeFolder(data: FolderData, parent?: FolderItem): FolderItem {
 		name: data.name,
 		color: data.color,
 		children: [],
+		references: [],
 		isHidden: data.isHidden ?? false,
 		expanded: data.expanded,
 		parent,
@@ -574,6 +758,21 @@ function emptyIndex(): FileIndex {
 	};
 }
 
+function emptyFolderRanges(folderId: string): FolderRangesFile {
+	return {
+		schemaVersion: SCHEMA_VERSION,
+		folderId,
+		ranges: [],
+	};
+}
+
+function cloneFolderRanges(ranges: FolderRangesFile): FolderRangesFile {
+	return {
+		...ranges,
+		ranges: [...ranges.ranges],
+	};
+}
+
 function fileCacheKey(key: WorkspaceFileKey): string {
 	return `${key.workspaceFolder}\0${key.path}`;
 }
@@ -581,6 +780,11 @@ function fileCacheKey(key: WorkspaceFileKey): string {
 function shardRelativePath(key: WorkspaceFileKey): string {
 	const digest = crypto.createHash('sha1').update(fileCacheKey(key)).digest('hex');
 	return `ranges/${encodeURIComponent(key.workspaceFolder)}/${digest.slice(0, 2)}/${digest}.json`;
+}
+
+function folderRangesRelativePath(folderId: string): string {
+	const digest = crypto.createHash('sha1').update(folderId).digest('hex');
+	return `${FOLDER_RANGES_DIRECTORY}/${digest.slice(0, 2)}/${digest}.json`;
 }
 
 function countByFolder(ranges: StoredRange[]): Record<string, number> {
@@ -599,6 +803,14 @@ function rangeIdentity(range: Pick<StoredRange, 'folderId' | 'range'>): string {
 		range.range.end.line,
 		range.range.end.character,
 	].join(':');
+}
+
+function referenceIdentity(reference: StoredRangeReference): string {
+	return `${reference.id}\0${reference.shard}`;
+}
+
+function sameReference(left: StoredRangeReference, right: StoredRangeReference): boolean {
+	return left.id === right.id && left.shard === right.shard;
 }
 
 function parentUri(uri: vscode.Uri): vscode.Uri {

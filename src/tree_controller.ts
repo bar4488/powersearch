@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { DecorationManager } from './decorator';
 import { PowerSearchStorage } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { FolderItem, createFolderItem } from './tree/tree_item';
+import { FolderItem, TreeNode, createFolderItem } from './tree/tree_item';
 import { isValidColor } from './utils';
 
 const defaultColors = [
@@ -58,6 +58,7 @@ export class TreeController {
             color: "#ffff00",
             expanded: true,
             children: [],
+            references: [],
         });
         this.tree.addNode(folder);
         await this.addLocationsToFolder(refs, folder);
@@ -128,8 +129,8 @@ export class TreeController {
         this.tree.updateNode(folder);
     }
 
-    public async onSelectFolder(folder: FolderItem) {
-        this.tree.selectFolder(folder);
+    public async onSelectNode(node: TreeNode) {
+        await this.tree.selectNode(node);
     }
 
     public async onRemoveFolder(folder: FolderItem) {
@@ -143,7 +144,7 @@ export class TreeController {
         if (!newName) {
             return;
         }
-        this.tree.addNode(createFolderItem({ name: newName, children: [] }), folder);
+        this.tree.addNode(createFolderItem({ name: newName, children: [], references: [] }), folder);
     }
 
     public async onToggleFolderVisibility(folder: FolderItem) {
@@ -154,6 +155,7 @@ export class TreeController {
     private async addLocationsToFolder(locations: vscode.Location[], folder: FolderItem): Promise<void> {
         const result = await this.storage.addRanges(locations, folder.id);
         if (result.added > 0) {
+            this.tree.addReferences(folder, result.addedReferences);
             await this.decorations.updateVisibleEditors();
         }
         if (result.skippedOutsideWorkspace > 0) {

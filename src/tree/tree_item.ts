@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 
 export type ParentNode = FolderItem | RootItem;
-export type TreeNode = FolderItem;
+export type TreeNode = FolderItem | ReferenceItem;
 
 export interface RootItem {
 	type: 'root';
@@ -23,10 +23,21 @@ export interface FolderItem {
 	id: string;
 	name: string;
 	children: FolderItem[];
+	references: ReferenceItem[];
 	color?: string;
 	isHidden: boolean;
 	expanded?: boolean;
 	parent?: ParentNode;
+}
+
+export interface StoredRangeReference {
+	id: string;
+	shard: string;
+}
+
+export interface ReferenceItem extends StoredRangeReference {
+	type: 'ref';
+	parent?: FolderItem;
 }
 
 export interface PositionData {
@@ -45,11 +56,24 @@ export interface StoredRange {
 	range: RangeData;
 }
 
-export function createFolderItem(data: Omit<FolderItem, 'type' | 'id' | 'isHidden'> & Partial<Pick<FolderItem, 'id' | 'isHidden'>>): FolderItem {
+type CreateFolderItemData =
+	Omit<FolderItem, 'type' | 'id' | 'isHidden' | 'children' | 'references'>
+	& Partial<Pick<FolderItem, 'id' | 'isHidden' | 'children' | 'references'>>;
+
+export function createFolderItem(data: CreateFolderItemData): FolderItem {
 	return {
 		type: 'folder',
+		...data,
 		id: data.id ?? createId('fld'),
 		isHidden: data.isHidden ?? false,
+		children: data.children ?? [],
+		references: data.references ?? [],
+	};
+}
+
+export function createReferenceItem(data: Omit<ReferenceItem, 'type'>): ReferenceItem {
+	return {
+		type: 'ref',
 		...data,
 	};
 }

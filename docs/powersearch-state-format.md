@@ -1,6 +1,6 @@
 # PowerSearch State Format
 
-PowerSearch stores all durable data in a visible `.powersearch` folder. The format is designed for large numbers of ranges: startup loads small metadata files, while range data is sharded by workspace folder and source file.
+PowerSearch stores all durable data in a visible `.powersearch` folder. The format is designed for large numbers of ranges: startup loads small metadata files, folder trees load lightweight reference indexes, and full range payloads stay sharded by workspace folder and source file.
 
 No current-format file stores absolute workspace paths or absolute source-file paths. Source locations are represented by a VS Code workspace-folder name plus a relative file path.
 
@@ -13,6 +13,9 @@ No current-format file stores absolute workspace paths or absolute source-file p
   ui.json
   indexes/
     files.json
+    folders/
+      <hash-prefix>/
+        <folder-hash>.json
   ranges/
     <workspace-folder-name>/
       <hash-prefix>/
@@ -71,6 +74,25 @@ Stores only the UI folder tree. It does not contain ranges.
 
 Folder IDs are stable identifiers. Ranges point to `folderId`, so folders can be renamed without rewriting all range shards.
 
+## `indexes/folders/.../*.json`
+
+Stores the ranges that should appear under each tree folder without duplicating the actual range payload.
+
+```json
+{
+  "schemaVersion": 2,
+  "folderId": "fld_2e3c...",
+  "ranges": [
+    {
+      "id": "rng_f1a2...",
+      "shard": "ranges/frontend/8f/8f21b2c9.json"
+    }
+  ]
+}
+```
+
+Each entry is a reference to the real range record stored in a file shard. If a folder index points to a missing shard file, PowerSearch drops that dangling entry when loading the folder tree.
+
 ## `ui.json`
 
 Stores persistent UI state.
@@ -115,7 +137,7 @@ The index is an optimization and discovery aid. The source of truth for ranges r
 
 ## Range Shards
 
-Each source file has one range shard.
+Each source file has one range shard, and only the shard stores the actual range coordinates.
 
 ```json
 {
@@ -146,14 +168,15 @@ Files outside the open workspace cannot be represented in the current format and
 ## Performance Model
 
 - Startup reads `manifest.json`, `folders.json`, `ui.json`, and `indexes/files.json`.
+- Tree rendering reads the lightweight per-folder indexes to reconstruct reference rows without loading every file shard up front.
 - Decorations for an editor read only that editor's range shard.
-- Adding a range rewrites only one shard and the small file index.
+- Adding a range rewrites one file shard, one folder index, and the small file index.
 - Renaming, recoloring, hiding, or expanding folders rewrites only `folders.json` and `ui.json`.
-- Deleting a folder removes ranges for that folder from affected shards and updates the index.
+- Deleting a folder removes its folder-index file, removes ranges for that folder from affected shards, and updates the file index.
 
 ## Compatibility Rules
 
 - Unsupported `schemaVersion` values should fail closed with a warning.
 - Unknown optional fields should be preserved by migrations when practical.
-- Broken file references should remain in shard files until the user explicitly removes or repairs them.
+- Folder indexes must not keep dangling references to missing shard files.
 - Legacy absolute-URI state is migrated only when the referenced files are inside the open workspace. The migrated current-format files contain workspace-folder names and relative paths only.
