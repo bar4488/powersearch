@@ -57,7 +57,7 @@ export interface LocationData {
 	}
 }
 
-export function createFolderItem(data: Omit<FolderItem, 'type' | 'iconPath' | 'isHidden'>): FolderItem {
+export function createFolderItem(data: Omit<FolderItem, 'type' | 'iconPath'>): FolderItem {
 	return {
 		type: 'folder',
 		isHidden: false,

@@ -125,6 +125,23 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return this.root.references;
 	}
 
+	public getSelectedFolderPath(): number[] | null {
+		if (!this.selectedFolder) {
+			return null;
+		}
+		return nodeToIndices(this.selectedFolder) ?? null;
+	}
+
+	public restoreSelectedFolder(path: number[] | null) {
+		if (!path) {
+			return;
+		}
+		const node = indicesToNode(path, this.root);
+		if (node?.type === 'folder') {
+			this.selectedFolder = node;
+		}
+	}
+
 	public clear() {
 		disposeDecorations(this.root.references);
 		this.root.references = [];
@@ -278,6 +295,14 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		this.updateTree();
 	}
 
+	public setExpanded(element: TreeNode, expanded: boolean) {
+		if (element.type !== 'folder' || element.expanded === expanded) {
+			return;
+		}
+		element.expanded = expanded;
+		this.updateTree();
+	}
+
 	async getChildren(element?: TreeNode) {
 		if (element === undefined) {
 			return this.root.references;
@@ -301,7 +326,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		else {
 			updateDecorations([item]);
 		}
-		this._onDidChange.fire(undefined);
+		this.updateTree();
 	}
 
 	private containsNode(node: TreeNode, searchNode: TreeNode | RootItem) {
