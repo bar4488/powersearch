@@ -1,22 +1,36 @@
 import * as vscode from 'vscode';
 import { PowerSearchStorage } from '../storage';
-import { folderAndAncestorsVisible, getPreviewChunks, indicesToNode, nodeToIndices } from '../utils';
-import { FolderItem, ParentNode, ReferenceItem, RootItem, StoredRangeReference, TreeNode, createFolderItem, createReferenceItem } from './tree_item';
+import { folderAndAncestorsVisible, folderBadgeText, getPreviewChunks, indicesToNode, nodeToIndices, resolveFolderColor } from '../utils';
+import { FolderItem, ParentNode, ReferenceItem, RootItem, StoredRangeReference, TreeNode, createReferenceItem } from './tree_item';
 
 export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
 	private readonly _onDidChange = new vscode.EventEmitter<undefined>();
+	private readonly folderIcon: { light: vscode.Uri; dark: vscode.Uri; };
+	private readonly targetFolderIcon: { light: vscode.Uri; dark: vscode.Uri; };
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
 	private readonly root: RootItem;
 	private selectedFolder: FolderItem | undefined;
 
-	constructor(children: FolderItem[], private readonly storage: PowerSearchStorage) {
+	constructor(
+		children: FolderItem[],
+		private readonly storage: PowerSearchStorage,
+		private readonly extensionUri: vscode.Uri,
+	) {
 		this.root = { type: 'root', children };
+		this.folderIcon = {
+			light: vscode.Uri.joinPath(this.extensionUri, 'resources', 'folder.svg'),
+			dark: vscode.Uri.joinPath(this.extensionUri, 'resources', 'folder.svg'),
+		};
+		this.targetFolderIcon = {
+			light: vscode.Uri.joinPath(this.extensionUri, 'resources', 'folder-target.svg'),
+			dark: vscode.Uri.joinPath(this.extensionUri, 'resources', 'folder-target.svg'),
+		};
 		for (const child of children) {
 			child.parent = this.root;
 		}
-		this._onDidChange.fire(undefined);
+		this.refresh();
 	}
 
 	dropMimeTypes = ['application/powersearch.folder'];
@@ -46,7 +60,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			return;
 		}
 		if (nodes.some((node) => this.containsNode(node, targetNode))) {
-			vscode.window.showWarningMessage("Cannot move a folder into itself.");
+			vscode.window.showWarningMessage('Cannot move a folder into itself.');
 			return;
 		}
 
@@ -59,10 +73,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	}
 
 	public async handleDrag(source: TreeNode[], treeDataTransfer: vscode.DataTransfer): Promise<void> {
-		if (source.length === 0) {
-			return;
-		}
-		if (source.some((node) => node.type !== 'folder')) {
+		if (source.length === 0 || source.some((node) => node.type !== 'folder')) {
 			return;
 		}
 
@@ -86,30 +97,33 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return this.root.children;
 	}
 
+	public hasFolders(): boolean {
+		return this.root.children.length > 0;
+	}
+
+	public listFolders(): FolderItem[] {
+		return this.flattenFolders();
+	}
+
+	public getSelectedFolder(): FolderItem | undefined {
+		return this.selectedFolder;
+	}
+
 	public getSelectedFolderId(): string | null {
 		return this.selectedFolder?.id ?? null;
 	}
 
 	public restoreSelectedFolder(folderId: string | null) {
-		if (!folderId) {
-			return;
-		}
-		this.selectedFolder = this.findFolder(folderId);
+		this.selectedFolder = folderId ? this.findFolder(folderId) : undefined;
+		this.refresh();
 	}
 
-	public getOrCreateSelectedFolder(): FolderItem {
-		if (this.selectedFolder) {
-			return this.selectedFolder;
+	public setSelectedFolder(folder: FolderItem | undefined) {
+		this.selectedFolder = folder;
+		if (folder) {
+			folder.expanded = true;
 		}
-		const existingDefault = this.root.children.find((folder) => folder.name === 'Default');
-		if (existingDefault) {
-			this.selectedFolder = existingDefault;
-			return existingDefault;
-		}
-		const defaultFolder = createFolderItem({ name: 'Default', color: '#ffff00', children: [], references: [], expanded: true });
-		this.addNode(defaultFolder);
-		this.selectedFolder = defaultFolder;
-		return defaultFolder;
+		this.updateTree();
 	}
 
 	public getFolder(folderId: string): FolderItem | undefined {
@@ -119,8 +133,9 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	public getVisibleColoredFolders(): Map<string, string> {
 		const result = new Map<string, string>();
 		for (const folder of this.flattenFolders()) {
-			if (folder.color && folderAndAncestorsVisible(folder)) {
-				result.set(folder.id, folder.color);
+			const color = resolveFolderColor(folder);
+			if (color && folderAndAncestorsVisible(folder)) {
+				result.set(folder.id, color);
 			}
 		}
 		return result;
@@ -129,7 +144,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	public clear() {
 		this.root.children = [];
 		this.selectedFolder = undefined;
-		this._onDidChange.fire(undefined);
+		this.refresh();
 	}
 
 	public addNode(node: FolderItem, parent: ParentNode = this.root) {
@@ -159,9 +174,8 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	public async selectNode(node: TreeNode) {
 		if (node.type === 'folder') {
-			this.selectedFolder = node;
-			this.selectedFolder.expanded = true;
-			this.updateTree();
+			const uri = await this.storage.ensureFolderDoc(node);
+			await vscode.commands.executeCommand('vscode.open', uri);
 			return;
 		}
 
@@ -181,16 +195,20 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	async getTreeItem(element: TreeNode) {
 		if (element.type === 'folder') {
+			const isTarget = this.selectedFolder?.id === element.id;
 			const result = new vscode.TreeItem(element.name);
-			result.contextValue = element.isHidden ? 'hiddenFolder' : 'visibleFolder';
-			result.description = element.color;
-			result.iconPath = new vscode.ThemeIcon('folder');
+			result.contextValue = element.isHidden
+				? isTarget ? 'hiddenTargetFolder' : 'hiddenFolder'
+				: isTarget ? 'targetFolder' : 'visibleFolder';
+			result.description = folderBadgeText(element, isTarget);
+			result.tooltip = this.buildFolderTooltip(element, isTarget);
+			result.iconPath = isTarget ? this.targetFolderIcon : this.folderIcon;
 			result.collapsibleState = element.children.length + element.references.length === 0
 				? vscode.TreeItemCollapsibleState.None
 				: element.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
 			result.command = {
 				command: 'powersearch.selectFolder',
-				title: 'Select Folder',
+				title: 'Open Folder Notes',
 				arguments: [element],
 			};
 			return result;
@@ -227,8 +245,9 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return result;
 	}
 
-	public setFolderColor(folder: FolderItem, color: string | undefined) {
+	public setFolderColor(folder: FolderItem, color: string | undefined, inheritsColor: boolean = false) {
 		folder.color = color;
+		folder.inheritsColor = inheritsColor;
 		this.updateTree();
 	}
 
@@ -264,8 +283,30 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		this.updateTree();
 	}
 
+	private buildFolderTooltip(folder: FolderItem, isTarget: boolean): string {
+		const lines = [folder.name];
+		if (isTarget) {
+			lines.push('Current target for new ranges');
+		}
+		if (folder.inheritsColor) {
+			lines.push(`Color: Parent${resolveFolderColor(folder) ? ` (${resolveFolderColor(folder)})` : ''}`);
+		} else if (folder.color) {
+			lines.push(`Color: ${folder.color}`);
+		}
+		if (folder.isHidden) {
+			lines.push('Hidden');
+		}
+		return lines.join('\n');
+	}
+
 	private refresh() {
+		void this.syncContexts();
 		this._onDidChange.fire(undefined);
+	}
+
+	private async syncContexts() {
+		await vscode.commands.executeCommand('setContext', 'powersearch.hasFolders', this.hasFolders());
+		await vscode.commands.executeCommand('setContext', 'powersearch.hasTargetFolder', !!this.selectedFolder);
 	}
 
 	private updateTree() {

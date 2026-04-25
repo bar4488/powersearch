@@ -9,13 +9,6 @@ Priority scale:
 
 ## P0 - Must-Haves
 
-- [ ] `[P0]` Replace the generated sample test with real behavior tests.
-  - Cover activation, commands, sharded persistence, deletion, color changes, visibility, missing files, and drag/drop.
-- [ ] `[P0]` Add a range management view or command surface.
-  - The folder tree intentionally contains only folders now.
-  - Users still need a fast way to inspect, repair, or remove ranges for a folder/file.
-  - Broken references should remain in range shards until explicitly repaired or removed.
-
 ## P1 - Important Bug Fixes
 
 - [ ] `[P1]` Improve preview labels for long references, multiline references, and deleted/broken files.
@@ -26,7 +19,10 @@ Priority scale:
   - Stored `Range`s drift as files are edited.
 - [ ] `[P2]` Add confirmation before deleting folders with children.
 - [ ] `[P2]` Replace the README template with actual usage, limitations, and command documentation.
+- [ ] `[P2]` Document the new target-folder workflow, inherited colors, root actions, and folder docs.
 - [ ] `[P2]` Add CI for `npm run compile`, `npm run lint`, and behavior tests.
+- [ ] `[P2]` Replace the generated sample test with real behavior tests.
+  - Cover activation, commands, sharded persistence, deletion, color changes, visibility, missing files, and drag/drop.
 
 ## P3 - Later Improvements
 
@@ -61,3 +57,8 @@ Priority scale:
 - [x] ~~Rework decoration lifecycle management.~~ Fixed by moving decoration ownership into `DecorationManager`.
 - [x] ~~Avoid opening documents during `getTreeItem` rendering.~~ Fixed because tree items are folders only.
 - [x] ~~Fix misleading command labels such as "Toggle Visibility Hide" vs "Toggle Visibility".~~ Fixed by renaming them to "Hide Folder" and "Show Folder".
+- [x] ~~Simplify the current target-folder workflow.~~ Fixed with an explicit target folder, status-bar visibility, quick target switching, and no silent default-folder creation for line/selection coloring.
+- [x] ~~Improve root-level folder actions.~~ Fixed by moving root actions to reliable tree title and welcome affordances instead of depending on empty-space context behavior.
+- [x] ~~Refresh the folder tree visuals.~~ Fixed with custom folder icons plus clearer target and inherited-color badges/tooltips.
+- [x] ~~Add inherited folder colors.~~ Fixed with a `Parent` color mode, resolved ancestor-color handling in decorations, and persisted `inheritsColor` folder metadata.
+- [x] ~~Add per-folder Markdown docs.~~ Fixed with deterministic `.powersearch/docs/<folder-id>.md` notes and cleanup on folder deletion.

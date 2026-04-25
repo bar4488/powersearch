@@ -8,6 +8,7 @@ const FOLDERS_FILE = 'folders.json';
 const UI_FILE = 'ui.json';
 const FILES_INDEX = 'indexes/files.json';
 const FOLDER_RANGES_DIRECTORY = 'indexes/folders';
+const DOCS_DIRECTORY = 'docs';
 const LEGACY_STATE_FILE = 'state.json';
 const LEGACY_WORKSPACE_STATE_KEY = 'treeData';
 const SCHEMA_VERSION = 2;
@@ -162,6 +163,35 @@ export class PowerSearchStorage {
 		await this.touchManifest();
 	}
 
+	async ensureFolderDoc(folder: FolderItem): Promise<vscode.Uri> {
+		const uri = this.folderDocUri(folder.id);
+		if (!await exists(uri)) {
+			const content = [
+				`# ${folder.name}`,
+				'',
+				'PowerSearch folder notes.',
+				'',
+			].join('\n');
+			await this.writeFile(uri, content);
+			await this.touchManifest();
+		}
+		return uri;
+	}
+
+	async removeFolderDocs(folderIds: Iterable<string>): Promise<void> {
+		let changed = false;
+		for (const folderId of folderIds) {
+			const uri = this.folderDocUri(folderId);
+			if (await exists(uri)) {
+				await this.deleteIfExists(uri);
+				changed = true;
+			}
+		}
+		if (changed) {
+			await this.touchManifest();
+		}
+	}
+
 	async addRanges(locations: vscode.Location[], folderId: string): Promise<AddRangesResult> {
 		const grouped = new Map<string, { key: WorkspaceFileKey; ranges: vscode.Range[] }>();
 		let skippedOutsideWorkspace = 0;
@@ -312,6 +342,7 @@ export class PowerSearchStorage {
 		await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.storageRootUri(), 'ranges'));
 		await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.storageRootUri(), 'indexes'));
 		await vscode.workspace.fs.createDirectory(this.folderRangesDirectoryUri());
+		await vscode.workspace.fs.createDirectory(this.folderDocsDirectoryUri());
 		const manifest = await this.readJson<ManifestFile | undefined>(this.manifestUri(), undefined);
 		if (!manifest) {
 			await this.writeManifest(new Date().toISOString());
@@ -447,6 +478,7 @@ export class PowerSearchStorage {
 				const folder = createFolderItem({
 					name: node.name ?? 'Folder',
 					color: node.color,
+					inheritsColor: node.inheritsColor ?? false,
 					children: [],
 					references: [],
 					isHidden: node.isHidden ?? false,
@@ -625,6 +657,11 @@ export class PowerSearchStorage {
 		await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(JSON.stringify(data, null, 2) + '\n'));
 	}
 
+	private async writeFile(uri: vscode.Uri, contents: string): Promise<void> {
+		await vscode.workspace.fs.createDirectory(parentUri(uri));
+		await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(contents));
+	}
+
 	private async deleteIfExists(uri: vscode.Uri): Promise<void> {
 		try {
 			await vscode.workspace.fs.delete(uri);
@@ -660,8 +697,16 @@ export class PowerSearchStorage {
 		return this.relativeUri(FOLDER_RANGES_DIRECTORY);
 	}
 
+	private folderDocsDirectoryUri(): vscode.Uri {
+		return this.relativeUri(DOCS_DIRECTORY);
+	}
+
 	private folderRangesUri(folderId: string): vscode.Uri {
 		return this.relativeUri(folderRangesRelativePath(folderId));
+	}
+
+	private folderDocUri(folderId: string): vscode.Uri {
+		return this.relativeUri(`${DOCS_DIRECTORY}/${folderId}.md`);
 	}
 
 	private relativeUri(relativePath: string): vscode.Uri {
@@ -679,6 +724,9 @@ function serializeFolder(folder: FolderItem): FolderData {
 	if (folder.color) {
 		data.color = folder.color;
 	}
+	if (folder.inheritsColor) {
+		data.inheritsColor = true;
+	}
 	if (folder.expanded !== undefined) {
 		data.expanded = folder.expanded;
 	}
@@ -690,6 +738,7 @@ function deserializeFolder(data: FolderData, parent?: FolderItem): FolderItem {
 		id: data.id,
 		name: data.name,
 		color: data.color,
+		inheritsColor: data.inheritsColor ?? false,
 		children: [],
 		references: [],
 		isHidden: data.isHidden ?? false,

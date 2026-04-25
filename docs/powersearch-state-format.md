@@ -11,6 +11,8 @@ No current-format file stores absolute workspace paths or absolute source-file p
   manifest.json
   folders.json
   ui.json
+  docs/
+    <folder-id>.md
   indexes/
     files.json
     folders/
@@ -45,7 +47,7 @@ Tracks schema version, storage ownership, and workspace-folder identities.
 
 ## `folders.json`
 
-Stores only the UI folder tree. It does not contain ranges.
+Stores only the UI folder tree. It does not contain ranges or Markdown note content.
 
 ```json
 {
@@ -55,6 +57,7 @@ Stores only the UI folder tree. It does not contain ranges.
       "id": "fld_2e3c...",
       "name": "Default",
       "color": "#ffff00",
+      "inheritsColor": false,
       "isHidden": false,
       "expanded": true,
       "children": [
@@ -73,6 +76,14 @@ Stores only the UI folder tree. It does not contain ranges.
 ```
 
 Folder IDs are stable identifiers. Ranges point to `folderId`, so folders can be renamed without rewriting all range shards.
+
+`inheritsColor` is optional. When `true`, the folder resolves its decoration color from the nearest ancestor with an explicit color.
+
+## `docs/<folder-id>.md`
+
+Stores optional Markdown notes for a folder. These files are created on demand when the user opens folder notes.
+
+The file path is deterministic by `folderId`, so folder renames do not orphan notes.
 
 ## `indexes/folders/.../*.json`
 
@@ -95,7 +106,7 @@ Each entry is a reference to the real range record stored in a file shard. If a 
 
 ## `ui.json`
 
-Stores persistent UI state.
+Stores persistent UI state, including the current target folder for new ranges.
 
 ```json
 {
@@ -169,10 +180,11 @@ Files outside the open workspace cannot be represented in the current format and
 
 - Startup reads `manifest.json`, `folders.json`, `ui.json`, and `indexes/files.json`.
 - Tree rendering reads the lightweight per-folder indexes to reconstruct reference rows without loading every file shard up front.
+- Folder notes are lazy-loaded only when the user opens a folder's Markdown file.
 - Decorations for an editor read only that editor's range shard.
 - Adding a range rewrites one file shard, one folder index, and the small file index.
-- Renaming, recoloring, hiding, or expanding folders rewrites only `folders.json` and `ui.json`.
-- Deleting a folder removes its folder-index file, removes ranges for that folder from affected shards, and updates the file index.
+- Renaming, recoloring, hiding, retargeting, or expanding folders rewrites only `folders.json` and `ui.json`.
+- Deleting a folder removes its Markdown notes file, removes its folder-index file, removes ranges for that folder from affected shards, and updates the file index.
 
 ## Compatibility Rules
 

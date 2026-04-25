@@ -29,6 +29,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "powersearch-explorer.folders",
+        "contents": "Create your first PowerSearch folder.\n[New Folder](command:powersearch.addFolder)"
+      }
+    ],
     "commands": [
       {
         "command": "powersearch.colorSymbol",
@@ -38,8 +44,8 @@
         "command": "powersearch.addFolder",
         "title": "Add a new folder",
         "icon": {
-          "light": "resources/add-folder.svg",
-          "dark": "resources/add-folder.svg"
+          "light": "resources/folder.svg",
+          "dark": "resources/folder.svg"
         }
       },
       {
@@ -47,8 +53,20 @@
         "title": "PowerSearch: Color Selection"
       },
       {
+        "command": "powersearch.chooseTargetFolder",
+        "title": "PowerSearch: Choose Target Folder"
+      },
+      {
+        "command": "powersearch.clearTargetFolder",
+        "title": "PowerSearch: Clear Target Folder"
+      },
+      {
         "command": "powersearch.colorLine",
         "title": "Powersearch: Color Line"
+      },
+      {
+        "command": "powersearch.openFolderDoc",
+        "title": "Open Folder Notes"
       },
       {
         "command": "powersearch.removeData",
@@ -85,39 +103,46 @@
       }
     ],
     "menus": {
-      "webview/context": [
-        {
-          "command": "powersearch.addFolder",
-          "when": "view == powersearch-explorer.folders"
-        }
-      ],
       "view/item/context": [
         {
           "command": "powersearch.toggleFolderVisibilityHide",
-          "when": "viewItem == visibleFolder",
+          "when": "viewItem == visibleFolder || viewItem == targetFolder",
           "group": "inline"
         },
         {
           "command": "powersearch.toggleFolderVisibilityShow",
-          "when": "viewItem == hiddenFolder",
+          "when": "viewItem == hiddenFolder || viewItem == hiddenTargetFolder",
           "group": "inline"
         },
         {
           "command": "powersearch.chooseFolderColor",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "inline"
+        },
+        {
+          "command": "powersearch.openFolderDoc",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
           "group": "inline"
         },
         {
           "command": "powersearch.renameFolder",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
         },
         {
           "command": "powersearch.removeFolder",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
         },
         {
           "command": "powersearch.addFolder",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+        },
+        {
+          "command": "powersearch.chooseTargetFolder",
           "when": "viewItem == visibleFolder || viewItem == hiddenFolder"
+        },
+        {
+          "command": "powersearch.clearTargetFolder",
+          "when": "viewItem == targetFolder || viewItem == hiddenTargetFolder"
         }
       ],
       "view/title": [

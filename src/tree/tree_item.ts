@@ -14,6 +14,7 @@ export interface FolderData {
 	name: string;
 	children: FolderData[];
 	color?: string;
+	inheritsColor?: boolean;
 	isHidden?: boolean;
 	expanded?: boolean;
 }
@@ -25,6 +26,7 @@ export interface FolderItem {
 	children: FolderItem[];
 	references: ReferenceItem[];
 	color?: string;
+	inheritsColor: boolean;
 	isHidden: boolean;
 	expanded?: boolean;
 	parent?: ParentNode;
@@ -57,8 +59,8 @@ export interface StoredRange {
 }
 
 type CreateFolderItemData =
-	Omit<FolderItem, 'type' | 'id' | 'isHidden' | 'children' | 'references'>
-	& Partial<Pick<FolderItem, 'id' | 'isHidden' | 'children' | 'references'>>;
+	Omit<FolderItem, 'type' | 'id' | 'isHidden' | 'inheritsColor' | 'children' | 'references'>
+	& Partial<Pick<FolderItem, 'id' | 'isHidden' | 'inheritsColor' | 'children' | 'references'>>;
 
 export function createFolderItem(data: CreateFolderItemData): FolderItem {
 	return {
@@ -66,6 +68,7 @@ export function createFolderItem(data: CreateFolderItemData): FolderItem {
 		...data,
 		id: data.id ?? createId('fld'),
 		isHidden: data.isHidden ?? false,
+		inheritsColor: data.inheritsColor ?? false,
 		children: data.children ?? [],
 		references: data.references ?? [],
 	};

@@ -73,3 +73,34 @@ export function folderAndAncestorsVisible(folder: FolderItem): boolean {
     }
     return true;
 }
+
+export function resolveFolderColor(folder: FolderItem): string | undefined {
+    if (!folder.inheritsColor) {
+        return folder.color;
+    }
+
+    let current: FolderItem | RootItem | undefined = folder.parent ?? { type: 'root', children: [] };
+    while (current.type !== 'root') {
+        if (!current.inheritsColor && current.color) {
+            return current.color;
+        }
+        current = current.parent;
+        if (!current) {
+            return undefined;
+        }
+    }
+    return undefined;
+}
+
+export function folderBadgeText(folder: FolderItem, isTarget: boolean): string | undefined {
+    const badges: string[] = [];
+    if (isTarget) {
+        badges.push('target');
+    }
+    if (folder.inheritsColor) {
+        badges.push('parent');
+    } else if (folder.color) {
+        badges.push(folder.color);
+    }
+    return badges.length > 0 ? badges.join(' · ') : undefined;
+}

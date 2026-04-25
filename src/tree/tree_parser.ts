@@ -5,6 +5,7 @@ export function parseTree(root: FolderData, parent: FolderItem | undefined = und
         id: root.id,
         name: root.name,
         color: root.color,
+        inheritsColor: root.inheritsColor,
         isHidden: root.isHidden,
         expanded: root.expanded,
         children: [],
@@ -21,6 +22,7 @@ export function dumpTree(root: FolderItem): FolderData {
         name: root.name,
         children: root.children.map(dumpTree),
         color: root.color,
+        inheritsColor: root.inheritsColor,
         isHidden: root.isHidden,
         expanded: root.expanded,
     };
