@@ -34,6 +34,9 @@ interface FoldersFile {
 interface UiFile {
 	schemaVersion: typeof SCHEMA_VERSION;
 	selectedFolderId: string | null;
+	rootColor?: string;
+	rootIsHidden?: boolean;
+	rootExpanded?: boolean;
 }
 
 interface FileIndex {
@@ -75,6 +78,9 @@ interface WorkspaceFileKey {
 export interface LoadedPowerSearchState {
 	folders: FolderItem[];
 	selectedFolderId: string | null;
+	rootColor?: string;
+	rootIsHidden: boolean;
+	rootExpanded: boolean;
 }
 
 export interface AddRangesResult {
@@ -126,7 +132,7 @@ export class PowerSearchStorage {
 		try {
 			await this.migrateLegacyStateIfNeeded();
 			const folders = await this.readJson<FoldersFile>(this.foldersUri(), { schemaVersion: SCHEMA_VERSION, folders: [] });
-			const ui = await this.readJson<UiFile>(this.uiUri(), { schemaVersion: SCHEMA_VERSION, selectedFolderId: null });
+			const ui = await this.readJson<UiFile>(this.uiUri(), { schemaVersion: SCHEMA_VERSION, selectedFolderId: null, rootIsHidden: false, rootExpanded: true });
 			if (folders.schemaVersion !== SCHEMA_VERSION || !Array.isArray(folders.folders)) {
 				throw new Error('Unsupported folders.json schema.');
 			}
@@ -139,11 +145,14 @@ export class PowerSearchStorage {
 			return {
 				folders: loadedFolders,
 				selectedFolderId: ui.selectedFolderId,
+				rootColor: ui.rootColor,
+				rootIsHidden: ui.rootIsHidden ?? false,
+				rootExpanded: ui.rootExpanded ?? true,
 			};
 		}
 		catch (error) {
 			void vscode.window.showWarningMessage(`PowerSearch could not load .powersearch data: ${error instanceof Error ? error.message : String(error)}`);
-			return { folders: [], selectedFolderId: null };
+			return { folders: [], selectedFolderId: null, rootIsHidden: false, rootExpanded: true };
 		}
 	}
 
@@ -155,10 +164,13 @@ export class PowerSearchStorage {
 		await this.touchManifest();
 	}
 
-	async saveUi(selectedFolderId: string | null): Promise<void> {
+	async saveUi(selectedFolderId: string | null, rootState?: { color?: string; isHidden: boolean; expanded: boolean; }): Promise<void> {
 		await this.writeJson(this.uiUri(), {
 			schemaVersion: SCHEMA_VERSION,
 			selectedFolderId,
+			rootColor: rootState?.color,
+			rootIsHidden: rootState?.isHidden ?? false,
+			rootExpanded: rootState?.expanded ?? true,
 		});
 		await this.touchManifest();
 	}
@@ -170,6 +182,21 @@ export class PowerSearchStorage {
 				`# ${folder.name}`,
 				'',
 				'PowerSearch folder notes.',
+				'',
+			].join('\n');
+			await this.writeFile(uri, content);
+			await this.touchManifest();
+		}
+		return uri;
+	}
+
+	async ensureRootDoc(): Promise<vscode.Uri> {
+		const uri = this.rootDocUri();
+		if (!await exists(uri)) {
+			const content = [
+				'# Folders',
+				'',
+				'PowerSearch root notes.',
 				'',
 			].join('\n');
 			await this.writeFile(uri, content);
@@ -707,6 +734,10 @@ export class PowerSearchStorage {
 
 	private folderDocUri(folderId: string): vscode.Uri {
 		return this.relativeUri(`${DOCS_DIRECTORY}/${folderId}.md`);
+	}
+
+	private rootDocUri(): vscode.Uri {
+		return this.relativeUri(`${DOCS_DIRECTORY}/root.md`);
 	}
 
 	private relativeUri(relativePath: string): vscode.Uri {

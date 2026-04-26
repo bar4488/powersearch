@@ -2,11 +2,21 @@ import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 
 export type ParentNode = FolderItem | RootItem;
-export type TreeNode = FolderItem | ReferenceItem;
+export type TreeNode = VisibleRootItem | FolderItem | ReferenceItem;
 
 export interface RootItem {
 	type: 'root';
 	children: FolderItem[];
+	color?: string;
+	isHidden: boolean;
+}
+
+export interface VisibleRootItem {
+	type: 'foldersRoot';
+	name: string;
+	expanded: boolean;
+	color?: string;
+	isHidden: boolean;
 }
 
 export interface FolderData {

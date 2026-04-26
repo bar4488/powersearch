@@ -12,6 +12,7 @@ No current-format file stores absolute workspace paths or absolute source-file p
   folders.json
   ui.json
   docs/
+    root.md
     <folder-id>.md
   indexes/
     files.json
@@ -79,11 +80,11 @@ Folder IDs are stable identifiers. Ranges point to `folderId`, so folders can be
 
 `inheritsColor` is optional. When `true`, the folder resolves its decoration color from the nearest ancestor with an explicit color.
 
-## `docs/<folder-id>.md`
+## `docs/root.md` and `docs/<folder-id>.md`
 
-Stores optional Markdown notes for a folder. These files are created on demand when the user opens folder notes.
+Stores optional Markdown notes for the synthetic root and for folders. These files are created on demand when the user opens notes.
 
-The file path is deterministic by `folderId`, so folder renames do not orphan notes.
+Folder note paths are deterministic by `folderId`, so folder renames do not orphan notes. The synthetic root always uses `docs/root.md`.
 
 ## `indexes/folders/.../*.json`
 
@@ -106,12 +107,15 @@ Each entry is a reference to the real range record stored in a file shard. If a 
 
 ## `ui.json`
 
-Stores persistent UI state, including the current target folder for new ranges.
+Stores persistent UI state, including the current target folder for new ranges and the synthetic root's shared color/visibility/expanded state.
 
 ```json
 {
   "schemaVersion": 2,
-  "selectedFolderId": "fld_2e3c..."
+  "selectedFolderId": "fld_2e3c...",
+  "rootColor": "#ffff00",
+  "rootIsHidden": false,
+  "rootExpanded": true
 }
 ```
 
@@ -181,6 +185,7 @@ Files outside the open workspace cannot be represented in the current format and
 - Startup reads `manifest.json`, `folders.json`, `ui.json`, and `indexes/files.json`.
 - Tree rendering reads the lightweight per-folder indexes to reconstruct reference rows without loading every file shard up front.
 - Folder notes are lazy-loaded only when the user opens a folder's Markdown file.
+- The synthetic root's UI state is read from `ui.json`; its color acts as the fallback parent color for inherited folders, and its hidden state suppresses all descendant decorations.
 - Decorations for an editor read only that editor's range shard.
 - Adding a range rewrites one file shard, one folder index, and the small file index.
 - Renaming, recoloring, hiding, retargeting, or expanding folders rewrites only `folders.json` and `ui.json`.

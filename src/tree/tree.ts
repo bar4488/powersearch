@@ -1,24 +1,28 @@
 import * as vscode from 'vscode';
 import { PowerSearchStorage } from '../storage';
 import { folderAndAncestorsVisible, folderBadgeText, getPreviewChunks, indicesToNode, nodeToIndices, resolveFolderColor } from '../utils';
-import { FolderItem, ParentNode, ReferenceItem, RootItem, StoredRangeReference, TreeNode, createReferenceItem } from './tree_item';
+import { FolderItem, ParentNode, ReferenceItem, RootItem, StoredRangeReference, TreeNode, VisibleRootItem, createReferenceItem } from './tree_item';
 
 export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
 	private readonly _onDidChange = new vscode.EventEmitter<undefined>();
 	private readonly folderIcon: { light: vscode.Uri; dark: vscode.Uri; };
 	private readonly targetFolderIcon: { light: vscode.Uri; dark: vscode.Uri; };
+	private readonly rootNoteIcon = new vscode.ThemeIcon('folder-library');
 
 	readonly onDidChangeTreeData = this._onDidChange.event;
 	private readonly root: RootItem;
+	private readonly foldersRootNode: VisibleRootItem;
 	private selectedFolder: FolderItem | undefined;
 
 	constructor(
 		children: FolderItem[],
 		private readonly storage: PowerSearchStorage,
 		private readonly extensionUri: vscode.Uri,
+		rootState: { color?: string; isHidden: boolean; expanded: boolean; },
 	) {
-		this.root = { type: 'root', children };
+		this.root = { type: 'root', children, color: rootState.color, isHidden: rootState.isHidden };
+		this.foldersRootNode = { type: 'foldersRoot', name: 'Folders', expanded: rootState.expanded, color: rootState.color, isHidden: rootState.isHidden };
 		this.folderIcon = {
 			light: vscode.Uri.joinPath(this.extensionUri, 'resources', 'folder.svg'),
 			dark: vscode.Uri.joinPath(this.extensionUri, 'resources', 'folder.svg'),
@@ -55,7 +59,11 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			nodes.push(node);
 		}
 
-		const targetNode = target?.type === 'folder' ? target : target?.parent ?? this.root;
+		const targetNode = target?.type === 'folder'
+			? target
+			: target?.type === 'foldersRoot'
+				? this.root
+				: target?.parent ?? this.root;
 		if (targetNode === nodes[0].parent) {
 			return;
 		}
@@ -95,6 +103,14 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	public getNodes(): FolderItem[] {
 		return this.root.children;
+	}
+
+	public getRootState(): { color?: string; isHidden: boolean; expanded: boolean; } {
+		return {
+			color: this.root.color,
+			isHidden: this.root.isHidden,
+			expanded: this.foldersRootNode.expanded,
+		};
 	}
 
 	public hasFolders(): boolean {
@@ -144,6 +160,10 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	public clear() {
 		this.root.children = [];
 		this.selectedFolder = undefined;
+		this.root.color = undefined;
+		this.root.isHidden = false;
+		this.foldersRootNode.color = undefined;
+		this.foldersRootNode.isHidden = false;
 		this.refresh();
 	}
 
@@ -173,6 +193,12 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	}
 
 	public async selectNode(node: TreeNode) {
+		if (node.type === 'foldersRoot') {
+			const uri = await this.storage.ensureRootDoc();
+			await vscode.commands.executeCommand('vscode.open', uri);
+			return;
+		}
+
 		if (node.type === 'folder') {
 			const uri = await this.storage.ensureFolderDoc(node);
 			await vscode.commands.executeCommand('vscode.open', uri);
@@ -194,6 +220,30 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	}
 
 	async getTreeItem(element: TreeNode) {
+		if (element.type === 'foldersRoot') {
+			const result = new vscode.TreeItem(element.name);
+			result.contextValue = element.isHidden ? 'hiddenFoldersRoot' : 'foldersRoot';
+			result.description = this.root.color ? this.root.color : undefined;
+			result.iconPath = this.rootNoteIcon;
+			result.collapsibleState = element.expanded
+				? vscode.TreeItemCollapsibleState.Expanded
+				: vscode.TreeItemCollapsibleState.Collapsed;
+			const lines = ['Root PowerSearch folder actions'];
+			if (this.root.color) {
+				lines.push(`Default color: ${this.root.color}`);
+			}
+			if (this.root.isHidden) {
+				lines.push('Hidden');
+			}
+			result.tooltip = lines.join('\n');
+			result.command = {
+				command: 'powersearch.selectFolder',
+				title: 'Open Root Notes',
+				arguments: [element],
+			};
+			return result;
+		}
+
 		if (element.type === 'folder') {
 			const isTarget = this.selectedFolder?.id === element.id;
 			const result = new vscode.TreeItem(element.name);
@@ -251,12 +301,26 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		this.updateTree();
 	}
 
+	public setRootColor(color: string | undefined) {
+		this.root.color = color;
+		this.foldersRootNode.color = color;
+		this.updateTree();
+	}
+
 	public updateNode(folder: FolderItem) {
 		this.updateTree();
 	}
 
-	public setExpanded(element: FolderItem, expanded: boolean) {
-		if (element.expanded === expanded) {
+	public setExpanded(element: TreeNode, expanded: boolean) {
+		if (element.type === 'foldersRoot') {
+			if (this.foldersRootNode.expanded === expanded) {
+				return;
+			}
+			this.foldersRootNode.expanded = expanded;
+			this.refresh();
+			return;
+		}
+		if (element.type === 'ref' || element.expanded === expanded) {
 			return;
 		}
 		element.expanded = expanded;
@@ -265,6 +329,9 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	async getChildren(element?: TreeNode) {
 		if (element === undefined) {
+			return [this.foldersRootNode];
+		}
+		if (element.type === 'foldersRoot') {
 			return this.root.children;
 		}
 		if (element.type === 'ref') {
@@ -274,12 +341,21 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	}
 
 	getParent(element: TreeNode) {
+		if (element.type === 'foldersRoot') {
+			return undefined;
+		}
 		const parent = element.parent;
 		return !parent || parent.type === 'root' ? undefined : parent;
 	}
 
 	toggleVisibility(item: FolderItem) {
 		item.isHidden = !item.isHidden;
+		this.updateTree();
+	}
+
+	toggleRootVisibility() {
+		this.root.isHidden = !this.root.isHidden;
+		this.foldersRootNode.isHidden = this.root.isHidden;
 		this.updateTree();
 	}
 

@@ -29,12 +29,6 @@
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "powersearch-explorer.folders",
-        "contents": "Create your first PowerSearch folder.\n[New Folder](command:powersearch.addFolder)"
-      }
-    ],
     "commands": [
       {
         "command": "powersearch.colorSymbol",
@@ -66,7 +60,11 @@
       },
       {
         "command": "powersearch.openFolderDoc",
-        "title": "Open Folder Notes"
+        "title": "Open Folder Notes",
+        "icon": {
+          "light": "resources/note.svg",
+          "dark": "resources/note.svg"
+        }
       },
       {
         "command": "powersearch.removeData",
@@ -104,6 +102,39 @@
     ],
     "menus": {
       "view/item/context": [
+        {
+          "command": "powersearch.addFolder",
+          "when": "viewItem == foldersRoot",
+          "group": "inline"
+        },
+        {
+          "command": "powersearch.openFolderDoc",
+          "when": "viewItem == foldersRoot || viewItem == hiddenFoldersRoot",
+          "group": "inline"
+        },
+        {
+          "command": "powersearch.chooseFolderColor",
+          "when": "viewItem == foldersRoot || viewItem == hiddenFoldersRoot",
+          "group": "inline"
+        },
+        {
+          "command": "powersearch.toggleFolderVisibilityHide",
+          "when": "viewItem == foldersRoot",
+          "group": "inline"
+        },
+        {
+          "command": "powersearch.toggleFolderVisibilityShow",
+          "when": "viewItem == hiddenFoldersRoot",
+          "group": "inline"
+        },
+        {
+          "command": "powersearch.clearTargetFolder",
+          "when": "(viewItem == foldersRoot || viewItem == hiddenFoldersRoot) && powersearch.hasTargetFolder"
+        },
+        {
+          "command": "powersearch.removeData",
+          "when": "viewItem == foldersRoot || viewItem == hiddenFoldersRoot"
+        },
         {
           "command": "powersearch.toggleFolderVisibilityHide",
           "when": "viewItem == visibleFolder || viewItem == targetFolder",

@@ -4,10 +4,12 @@ PowerSearch is a VS Code extension for grouping and coloring source ranges. It s
 
 ## Current UX
 
+- The tree shows a top-level **Folders** node that acts as the root action surface for folder-wide actions such as creating folders, setting the shared default color, toggling shared visibility, opening root notes, or clearing the current target.
 - Pick a **target folder** before coloring selections or lines. Right-click a folder to set it as the target, and right-click the current target to clear it.
 - Left-click a folder to open its notes. The status bar plus tree badge show which folder is the current target.
-- Folder colors can be explicit, cleared, or set to **Parent** so a folder inherits the nearest colored ancestor.
-- Folder notes are Markdown files stored in `.powersearch/docs/` and opened by clicking the folder or from the folder context menu.
+- Folder colors can be explicit, cleared, or set to **Parent** so a folder inherits the nearest colored ancestor, including the synthetic root's default color.
+- Hiding the synthetic root suppresses all descendant decorations until it is shown again.
+- Folder notes are Markdown files stored in `.powersearch/docs/` and opened by clicking the folder or from the folder context menu. The synthetic root uses `.powersearch/docs/root.md`.
 
 ## Development
 

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { DecorationManager } from './decorator';
 import { PowerSearchStorage } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { FolderItem, TreeNode, createFolderItem } from './tree/tree_item';
+import { FolderItem, TreeNode, VisibleRootItem, createFolderItem } from './tree/tree_item';
 import { isValidColor } from './utils';
 
 const defaultColors = [
@@ -24,6 +24,8 @@ const defaultColors = [
 	{ name: 'Silver', value: '#DDDDDD' },
 	{ name: 'White', value: '#FFFFFF' },
 ];
+
+type ColorTarget = FolderItem | VisibleRootItem;
 
 export class TreeController {
 	constructor(
@@ -72,8 +74,8 @@ export class TreeController {
 			return;
 		}
 
-		const selection = editor.selection;
-		if (selection.isEmpty) {
+		const selections = editor.selections.filter((selection) => !selection.isEmpty);
+		if (selections.length === 0) {
 			vscode.window.showWarningMessage('Select text before coloring a selection.');
 			return;
 		}
@@ -83,7 +85,10 @@ export class TreeController {
 			return;
 		}
 
-		await this.addLocationsToFolder([new vscode.Location(editor.document.uri, selection)], folder);
+		await this.addLocationsToFolder(
+			selections.map((selection) => new vscode.Location(editor.document.uri, selection)),
+			folder,
+		);
 	}
 
 	public async onColorLine() {
@@ -116,23 +121,34 @@ export class TreeController {
 		this.tree.setSelectedFolder(undefined);
 	}
 
-	public async onChangeFolderColor(folder: FolderItem) {
+	public async onChangeFolderColor(target: ColorTarget) {
+		const choices = target.type === 'foldersRoot'
+			? [...defaultColors.map((option) => option.name), 'Custom', 'None']
+			: [...defaultColors.map((option) => option.name), 'Parent', 'Custom', 'None'];
 		const choice = await vscode.window.showQuickPick(
-			[...defaultColors.map((option) => option.name), 'Parent', 'Custom', 'None'],
-			{ placeHolder: `Choose a color mode for ${folder.name}` },
+			choices,
+			{ placeHolder: `Choose a color mode for ${target.name}` },
 		);
 		if (!choice) {
 			return;
 		}
 
 		if (choice === 'None') {
-			this.tree.setFolderColor(folder, undefined, false);
+			if (target.type === 'foldersRoot') {
+				this.tree.setRootColor(undefined);
+			}
+			else {
+				this.tree.setFolderColor(target, undefined, false);
+			}
 			await this.decorations.updateVisibleEditors();
 			return;
 		}
 
 		if (choice === 'Parent') {
-			this.tree.setFolderColor(folder, undefined, true);
+			if (target.type === 'foldersRoot') {
+				return;
+			}
+			this.tree.setFolderColor(target, undefined, true);
 			await this.decorations.updateVisibleEditors();
 			return;
 		}
@@ -150,7 +166,12 @@ export class TreeController {
 			color = defaultColors[idx].value;
 		}
 
-		this.tree.setFolderColor(folder, color, false);
+		if (target.type === 'foldersRoot') {
+			this.tree.setRootColor(color);
+		}
+		else {
+			this.tree.setFolderColor(target, color, false);
+		}
 		await this.decorations.updateVisibleEditors();
 	}
 
@@ -164,13 +185,15 @@ export class TreeController {
 		this.tree.updateNode(folder);
 	}
 
-	public async onOpenFolderDoc(folder?: FolderItem) {
+	public async onOpenFolderDoc(folder?: FolderItem | VisibleRootItem) {
 		const target = folder ?? this.tree.getSelectedFolder();
 		if (!target) {
 			vscode.window.showWarningMessage('Choose a folder before opening folder notes.');
 			return;
 		}
-		const uri = await this.storage.ensureFolderDoc(target);
+		const uri = target.type === 'foldersRoot'
+			? await this.storage.ensureRootDoc()
+			: await this.storage.ensureFolderDoc(target);
 		await vscode.commands.executeCommand('vscode.open', uri);
 	}
 
@@ -192,8 +215,13 @@ export class TreeController {
 		}
 	}
 
-	public async onToggleFolderVisibility(folder: FolderItem) {
-		this.tree.toggleVisibility(folder);
+	public async onToggleFolderVisibility(target: FolderItem | VisibleRootItem) {
+		if (target.type === 'foldersRoot') {
+			this.tree.toggleRootVisibility();
+		}
+		else {
+			this.tree.toggleVisibility(target);
+		}
 		await this.decorations.updateVisibleEditors();
 	}
 

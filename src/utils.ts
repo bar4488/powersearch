@@ -71,7 +71,7 @@ export function folderAndAncestorsVisible(folder: FolderItem): boolean {
         }
         current = current.parent;
     }
-    return true;
+    return !current.isHidden;
 }
 
 export function resolveFolderColor(folder: FolderItem): string | undefined {
@@ -79,7 +79,7 @@ export function resolveFolderColor(folder: FolderItem): string | undefined {
         return folder.color;
     }
 
-    let current: FolderItem | RootItem | undefined = folder.parent ?? { type: 'root', children: [] };
+    let current: FolderItem | RootItem | undefined = folder.parent ?? { type: 'root', children: [], isHidden: false };
     while (current.type !== 'root') {
         if (!current.inheritsColor && current.color) {
             return current.color;
@@ -89,7 +89,7 @@ export function resolveFolderColor(folder: FolderItem): string | undefined {
             return undefined;
         }
     }
-    return undefined;
+    return current.color;
 }
 
 export function folderBadgeText(folder: FolderItem, isTarget: boolean): string | undefined {
