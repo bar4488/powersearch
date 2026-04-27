@@ -78,6 +78,7 @@ export interface StoredRange {
 	id: string;
 	folderId: string;
 	range: RangeData;
+	comment?: string;
 }
 
 type CreateFolderItemData =

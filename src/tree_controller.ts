@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { DecorationManager } from './decorator';
-import { PowerSearchStorage } from './storage';
+import { PowerSearchStorage, StoredDocumentRange } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { FolderItem, ReferenceItem, SavedSearchData, SearchScope, TreeNode, VisibleRootItem, createFolderItem, createId } from './tree/tree_item';
+import { FolderItem, ReferenceItem, SavedSearchData, SearchScope, TreeNode, VisibleRootItem, createFolderItem, createId, rangeFromData } from './tree/tree_item';
 import { getPreviewChunks, isValidColor } from './utils';
 
 const defaultColors = [
@@ -277,6 +277,32 @@ export class TreeController {
 		}
 	}
 
+	public async onEditRangeComment(reference?: ReferenceItem) {
+		const target = reference
+			? await this.resolveCommentTargetFromReference(reference)
+			: await this.resolveCommentTargetAtCursor();
+		if (!target) {
+			return;
+		}
+
+		const value = await vscode.window.showInputBox({
+			prompt: 'Edit range comment',
+			value: target.storedRange.comment ?? '',
+			placeHolder: 'Shown inline as a colored // comment. Leave empty to clear.',
+		});
+		if (value === undefined) {
+			return;
+		}
+
+		const comment = normalizeRangeComment(value);
+		const changed = await this.storage.updateRangeComment(target.reference, comment);
+		if (!changed) {
+			return;
+		}
+		this.tree.refreshTree();
+		await this.decorations.updateVisibleEditors();
+	}
+
 	public async onAddFolder(parent?: FolderItem | VisibleRootItem) {
 		const folder = await this.createFolder(parent);
 		if (folder) {
@@ -296,6 +322,45 @@ export class TreeController {
 
 	private async requireTargetFolder(): Promise<FolderItem | undefined> {
 		return this.tree.getSelectedFolder() ?? this.pickFolder('Choose where new ranges should be stored.', true);
+	}
+
+	private async resolveCommentTargetFromReference(reference: ReferenceItem): Promise<StoredDocumentRange | undefined> {
+		const resolved = await this.storage.resolveReference(reference);
+		if (resolved) {
+			return {
+				reference: { id: reference.id, shard: reference.shard },
+				storedRange: resolved.storedRange,
+			};
+		}
+		if (reference.parent) {
+			await this.storage.removeDanglingReference(reference.parent.id, reference);
+			this.tree.removeReference(reference);
+		}
+		return undefined;
+	}
+
+	private async resolveCommentTargetAtCursor(): Promise<StoredDocumentRange | undefined> {
+		const editor = vscode.window.activeTextEditor;
+		if (!editor) {
+			vscode.window.showWarningMessage('Open an editor before editing a range comment.');
+			return undefined;
+		}
+
+		const visibleDecoratedFolders = this.tree.getVisibleColoredFolders();
+		const cursor = editor.selection.active;
+		const candidates = (await this.storage.getDocumentRanges(editor.document.uri)).filter((entry) =>
+			visibleDecoratedFolders.has(entry.storedRange.folderId)
+			&& rangeFromData(entry.storedRange.range).contains(cursor),
+		);
+		if (candidates.length === 0) {
+			vscode.window.showWarningMessage('No visible decorated PowerSearch range found at the cursor.');
+			return undefined;
+		}
+		if (candidates.length > 1) {
+			vscode.window.showWarningMessage('Cannot edit a range comment when multiple visible decorated ranges overlap the cursor.');
+			return undefined;
+		}
+		return candidates[0];
 	}
 
 	private async createFolder(parent?: FolderItem | VisibleRootItem, initialName?: string): Promise<FolderItem | undefined> {
@@ -623,4 +688,9 @@ function emptySearchRunResult(): SearchRunResult {
 		resultCount: 0,
 		fileCount: 0,
 	};
+}
+
+function normalizeRangeComment(value: string): string | undefined {
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
 }

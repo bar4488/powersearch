@@ -6,6 +6,7 @@ import { createDecorationFromColor } from './utils';
 
 export class DecorationManager implements vscode.Disposable {
     private readonly decorations = new Map<string, { color: string; type: vscode.TextEditorDecorationType }>();
+    private readonly commentDecorationType = vscode.window.createTextEditorDecorationType({});
 
     constructor(
         private readonly storage: PowerSearchStorage,
@@ -26,19 +27,37 @@ export class DecorationManager implements vscode.Disposable {
                 continue;
             }
             const grouped = new Map<string, vscode.Range[]>();
+            const comments: vscode.DecorationOptions[] = [];
 
             for (const range of ranges) {
-                if (!coloredFolders.has(range.folderId)) {
+                const color = coloredFolders.get(range.folderId);
+                if (!color) {
                     continue;
                 }
                 const folderRanges = grouped.get(range.folderId) ?? [];
-                folderRanges.push(rangeFromData(range.range));
+                const storedRange = rangeFromData(range.range);
+                folderRanges.push(storedRange);
                 grouped.set(range.folderId, folderRanges);
+                if (range.comment) {
+                    const lineEnd = editor.document.lineAt(storedRange.end.line).range.end;
+                    comments.push({
+                        range: new vscode.Range(lineEnd, lineEnd),
+                        renderOptions: {
+                            after: {
+                                contentText: ` // ${singleLineComment(range.comment)}`,
+                                color,
+                                margin: '0 0 0 0.5rem',
+                                fontStyle: 'italic',
+                            },
+                        },
+                    });
+                }
             }
 
             for (const [folderId, decoration] of this.decorations) {
                 editor.setDecorations(decoration.type, grouped.get(folderId) ?? []);
             }
+            editor.setDecorations(this.commentDecorationType, comments);
         }
     }
 
@@ -46,6 +65,7 @@ export class DecorationManager implements vscode.Disposable {
         for (const decoration of this.decorations.values()) {
             decoration.type.dispose();
         }
+        this.commentDecorationType.dispose();
         this.decorations.clear();
     }
 
@@ -67,4 +87,8 @@ export class DecorationManager implements vscode.Disposable {
             }
         }
     }
+}
+
+function singleLineComment(comment: string): string {
+    return comment.replace(/\s+/g, ' ').trim();
 }

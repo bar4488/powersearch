@@ -113,6 +113,16 @@ export interface MoveRangeRequest {
 	reference: StoredRangeReference;
 }
 
+export interface StoredDocumentRange {
+	reference: StoredRangeReference;
+	storedRange: StoredRange;
+}
+
+export interface ResolvedReference {
+	location: vscode.Location;
+	storedRange: StoredRange;
+}
+
 export class PowerSearchStorage {
 	private readonly rangeCache = new Map<string, RangeShardFile>();
 	private readonly rangeShardPathCache = new Map<string, RangeShardFile>();
@@ -346,20 +356,64 @@ export class PowerSearchStorage {
 		return shard.ranges;
 	}
 
+	async getDocumentRanges(uri: vscode.Uri): Promise<StoredDocumentRange[]> {
+		const key = this.keyForUri(uri);
+		if (!key) {
+			return [];
+		}
+		const shard = await this.loadRangeShard(key);
+		const shardPath = shardRelativePath(key);
+		return shard.ranges.map((storedRange) => ({
+			reference: { id: storedRange.id, shard: shardPath },
+			storedRange,
+		}));
+	}
+
 	async resolveReferenceLocation(reference: StoredRangeReference): Promise<vscode.Location | undefined> {
+		const resolved = await this.resolveReference(reference);
+		return resolved?.location;
+	}
+
+	async resolveReference(reference: StoredRangeReference): Promise<ResolvedReference | undefined> {
 		const shard = await this.loadRangeShardByRelativePath(reference.shard);
 		if (!shard) {
 			return undefined;
 		}
-		const range = shard.ranges.find((item) => item.id === reference.id);
-		if (!range) {
+		const storedRange = shard.ranges.find((item) => item.id === reference.id);
+		if (!storedRange) {
 			return undefined;
 		}
 		const uri = this.workspaceFileUri(shard.workspaceFolder, shard.path);
 		if (!uri) {
 			return undefined;
 		}
-		return new vscode.Location(uri, rangeFromData(range.range));
+		return {
+			location: new vscode.Location(uri, rangeFromData(storedRange.range)),
+			storedRange,
+		};
+	}
+
+	async updateRangeComment(reference: StoredRangeReference, comment: string | undefined): Promise<boolean> {
+		return this.runRangeMutation(() => this.updateRangeCommentUnlocked(reference, comment));
+	}
+
+	private async updateRangeCommentUnlocked(reference: StoredRangeReference, comment: string | undefined): Promise<boolean> {
+		const shard = await this.loadRangeShardByRelativePath(reference.shard);
+		if (!shard) {
+			return false;
+		}
+		const storedRange = shard.ranges.find((item) => item.id === reference.id);
+		if (!storedRange) {
+			return false;
+		}
+		const nextComment = comment && comment.length > 0 ? comment : undefined;
+		if (storedRange.comment === nextComment) {
+			return false;
+		}
+		storedRange.comment = nextComment;
+		await this.saveRangeShard(shard);
+		await this.touchManifest();
+		return true;
 	}
 
 	async removeDanglingReference(folderId: string, reference: StoredRangeReference): Promise<void> {

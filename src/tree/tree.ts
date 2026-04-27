@@ -402,16 +402,16 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			return result;
 		}
 
-		const location = await this.storage.resolveReferenceLocation(element);
-		if (!location) {
+		const resolved = await this.storage.resolveReference(element);
+		if (!resolved) {
 			return new vscode.TreeItem('Missing reference');
 		}
 
 		let result: vscode.TreeItem;
-		const description = vscode.workspace.asRelativePath(location.uri, false);
+		const description = vscode.workspace.asRelativePath(resolved.location.uri, false);
 		try {
-			const doc = await vscode.workspace.openTextDocument(location.uri);
-			const { before, inside, after } = getPreviewChunks(doc, location.range);
+			const doc = await vscode.workspace.openTextDocument(resolved.location.uri);
+			const { before, inside, after } = getPreviewChunks(doc, resolved.location.range);
 			const label: vscode.TreeItemLabel = {
 				label: before + inside + after,
 				highlights: [[before.length, before.length + inside.length]],
@@ -424,7 +424,9 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		result.collapsibleState = vscode.TreeItemCollapsibleState.None;
 		result.contextValue = 'reference';
 		result.description = description;
-		result.tooltip = description;
+		result.tooltip = resolved.storedRange.comment
+			? `${description}\n\n// ${resolved.storedRange.comment}`
+			: description;
 		result.command = {
 			command: 'powersearch.selectFolder',
 			title: 'Open Reference',
@@ -447,6 +449,10 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	public updateNode(folder: FolderItem) {
 		this.updateTree();
+	}
+
+	public refreshTree() {
+		this.refresh();
 	}
 
 	public setExpanded(element: TreeNode, expanded: boolean) {

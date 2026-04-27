@@ -100,6 +100,14 @@
         "icon": "resources/bin.svg"
       },
       {
+        "command": "powersearch.editRangeComment",
+        "title": "PowerSearch: Edit Range Comment",
+        "icon": {
+          "light": "resources/note.svg",
+          "dark": "resources/note.svg"
+        }
+      },
+      {
         "command": "powersearch.toggleFolderVisibilityHide",
         "title": "Folder Hide",
         "icon": "$(eye)"
@@ -174,6 +182,10 @@
         {
           "command": "powersearch.clearTargetFolder",
           "when": "viewItem == targetFolder || viewItem == hiddenTargetFolder"
+        },
+        {
+          "command": "powersearch.editRangeComment",
+          "when": "viewItem == reference"
         },
         {
           "command": "powersearch.deleteRange",

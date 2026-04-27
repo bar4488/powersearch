@@ -128,7 +128,7 @@ Stores the ranges that should appear under each tree folder without duplicating 
 }
 ```
 
-Each entry is a reference to the real range record stored in a file shard. If a folder index points to a missing shard file or to a missing range id inside an existing shard, PowerSearch drops that dangling entry when loading the folder tree.
+Each entry is a reference to the real range record stored in a file shard. Comments and other range metadata stay only in the shard. If a folder index points to a missing shard file or to a missing range id inside an existing shard, PowerSearch drops that dangling entry when loading the folder tree.
 
 ## `ui.json`
 
@@ -190,6 +190,7 @@ Each source file has one range shard, and only the shard stores the actual range
     {
       "id": "rng_f1a2...",
       "folderId": "fld_2e3c...",
+      "comment": "check whether this branch is still reachable",
       "range": {
         "start": { "line": 12, "character": 4 },
         "end": { "line": 12, "character": 18 }
@@ -216,6 +217,7 @@ Files outside the open workspace cannot be represented in the current format and
 - Saved searches are lazy: PowerSearch only opens files and computes match ranges when a search is run in the Search view.
 - Decorations for an editor read only that editor's range shard.
 - Adding a range rewrites one file shard, one folder index, and the small file index.
+- Editing a range comment rewrites only the affected file shard.
 - Moving ranges by drag-and-drop or deleting them from the tree rewrites the affected file shard plus the affected folder indexes, and updates the file index when shard counts change.
 - Saving or deleting a saved search rewrites only `searches.json`.
 - Renaming, recoloring, hiding, retargeting, or expanding folders rewrites only `folders.json` and `ui.json`.
