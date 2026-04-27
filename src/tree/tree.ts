@@ -253,6 +253,16 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return this.findFolder(folderId);
 	}
 
+	public getReference(reference: StoredRangeReference): ReferenceItem | undefined {
+		for (const folder of this.flattenFolders()) {
+			const match = folder.references.find((item) => sameStoredRangeReference(item, reference));
+			if (match) {
+				return match;
+			}
+		}
+		return undefined;
+	}
+
 	public getVisibleColoredFolders(): Map<string, string> {
 		const result = new Map<string, string>();
 		for (const folder of this.flattenFolders()) {

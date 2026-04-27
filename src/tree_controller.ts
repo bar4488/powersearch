@@ -303,6 +303,19 @@ export class TreeController {
 		await this.decorations.updateVisibleEditors();
 	}
 
+	public async onRevealCurrentRange(reveal: (reference: ReferenceItem) => Thenable<void>) {
+		const target = await this.resolveCommentTargetAtCursor();
+		if (!target) {
+			return;
+		}
+		const reference = this.tree.getReference(target.reference);
+		if (!reference) {
+			vscode.window.showWarningMessage('Could not find the current PowerSearch range in the folders tree.');
+			return;
+		}
+		await reveal(reference);
+	}
+
 	public async onAddFolder(parent?: FolderItem | VisibleRootItem) {
 		const folder = await this.createFolder(parent);
 		if (folder) {

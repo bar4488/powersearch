@@ -99,6 +99,11 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('powersearch.renameFolder', async (folder: FolderItem) => controller.onRenameFolder(folder)),
 		vscode.commands.registerCommand('powersearch.removeFolder', async (folder: FolderItem) => controller.onRemoveFolder(folder)),
 		vscode.commands.registerCommand('powersearch.editRangeComment', async (reference?: ReferenceItem) => controller.onEditRangeComment(reference)),
+		vscode.commands.registerCommand('powersearch.revealCurrentRange', async () => controller.onRevealCurrentRange((reference) => foldersTreeView.reveal(reference, {
+			expand: true,
+			focus: true,
+			select: true,
+		}))),
 		vscode.commands.registerCommand('powersearch.deleteRange', async (reference: ReferenceItem) => controller.onDeleteRange(reference)),
 		vscode.commands.registerCommand('powersearch.addFolder', async (folder?: FolderItem | VisibleRootItem) => controller.onAddFolder(folder)),
 		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityShow', (item: FolderItem | VisibleRootItem) => controller.onToggleFolderVisibility(item)),

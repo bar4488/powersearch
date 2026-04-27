@@ -108,6 +108,10 @@
         }
       },
       {
+        "command": "powersearch.revealCurrentRange",
+        "title": "PowerSearch: Reveal Current Range"
+      },
+      {
         "command": "powersearch.toggleFolderVisibilityHide",
         "title": "Folder Hide",
         "icon": "$(eye)"

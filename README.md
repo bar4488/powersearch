@@ -11,6 +11,7 @@ PowerSearch is a VS Code extension for grouping and coloring source ranges. It s
 - Drag one or many stored ranges onto another folder to move them. Each range row also has an inline delete button, and both actions keep the tree index and file shard storage in sync.
 - Range comments are stored on the range itself. Right-click a range or run **PowerSearch: Edit Range Comment** with the cursor inside a visible decorated range to show a colored inline `// comment` hint without editing the source file.
 - Stored ranges now follow ordinary text edits in their file. If an edit fully removes a range, PowerSearch drops that range instead of leaving a stale entry behind.
+- Run **PowerSearch: Reveal Current Range** to jump the Folders view to the visible decorated range under the cursor.
 - Folder colors can be explicit, cleared, or set to **Parent** so a folder inherits the nearest colored ancestor, including the synthetic root's default color.
 - Hiding the synthetic root suppresses all descendant decorations until it is shown again.
 - Folder notes are Markdown files stored in `.powersearch/docs/` and opened by clicking the folder or from the folder context menu. The synthetic root uses `.powersearch/docs/root.md`.
