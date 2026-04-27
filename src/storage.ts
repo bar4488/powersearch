@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { FolderData, FolderItem, ReferenceItem, SavedSearchData, StoredRange, StoredRangeReference, createFolderItem, createId, createReferenceItem, rangeFromData, rangeToData } from './tree/tree_item';
+import { FolderData, FolderItem, ReferenceItem, SavedSearchData, StoredRange, StoredRangeReference, createFolderItem, createId, createReferenceItem, rangeFromData, rangeToData, referenceKey, sameStoredRangeReference } from './tree/tree_item';
 
 const STORAGE_DIRECTORY = '.powersearch';
 const MANIFEST_FILE = 'manifest.json';
@@ -98,11 +98,27 @@ export interface AddRangesResult {
 	skippedOutsideWorkspace: number;
 }
 
+export interface DeleteRangeResult {
+	removed: boolean;
+	prunedDangling: boolean;
+}
+
+export interface MoveRangeResult {
+	outcome: 'moved' | 'deduplicated' | 'missing' | 'unchanged';
+	reference?: StoredRangeReference;
+}
+
+export interface MoveRangeRequest {
+	sourceFolderId: string;
+	reference: StoredRangeReference;
+}
+
 export class PowerSearchStorage {
 	private readonly rangeCache = new Map<string, RangeShardFile>();
 	private readonly rangeShardPathCache = new Map<string, RangeShardFile>();
 	private readonly folderRangesCache = new Map<string, FolderRangesFile>();
 	private index: FileIndex = emptyIndex();
+	private rangeMutationQueue: Promise<void> = Promise.resolve();
 
 	private constructor(
 		private readonly context: vscode.ExtensionContext,
@@ -264,6 +280,10 @@ export class PowerSearchStorage {
 	}
 
 	async addRanges(locations: vscode.Location[], folderId: string): Promise<AddRangesResult> {
+		return this.runRangeMutation(() => this.addRangesUnlocked(locations, folderId));
+	}
+
+	private async addRangesUnlocked(locations: vscode.Location[], folderId: string): Promise<AddRangesResult> {
 		const grouped = new Map<string, { key: WorkspaceFileKey; ranges: vscode.Range[] }>();
 		let skippedOutsideWorkspace = 0;
 
@@ -343,17 +363,163 @@ export class PowerSearchStorage {
 	}
 
 	async removeDanglingReference(folderId: string, reference: StoredRangeReference): Promise<void> {
-		const index = await this.loadFolderRanges(folderId);
-		const nextRanges = index.ranges.filter((item) => !sameReference(item, reference));
-		if (nextRanges.length === index.ranges.length) {
+		return this.runRangeMutation(() => this.removeDanglingReferenceUnlocked(folderId, reference));
+	}
+
+	private async removeDanglingReferenceUnlocked(folderId: string, reference: StoredRangeReference): Promise<void> {
+		const changed = await this.removeFolderReference(folderId, reference);
+		if (!changed) {
 			return;
 		}
-		index.ranges = nextRanges;
-		await this.saveFolderRanges(index);
 		await this.touchManifest();
 	}
 
+	async deleteRange(sourceFolderId: string, reference: StoredRangeReference): Promise<DeleteRangeResult> {
+		return this.runRangeMutation(() => this.deleteRangeUnlocked(sourceFolderId, reference));
+	}
+
+	private async deleteRangeUnlocked(sourceFolderId: string, reference: StoredRangeReference): Promise<DeleteRangeResult> {
+		const shard = await this.loadRangeShardByRelativePath(reference.shard);
+		if (!shard) {
+			const removedFromIndex = await this.removeFolderReference(sourceFolderId, reference);
+			if (removedFromIndex) {
+				await this.touchManifest();
+			}
+			return {
+				removed: removedFromIndex,
+				prunedDangling: true,
+			};
+		}
+
+		const storedRange = shard.ranges.find((item) => item.id === reference.id);
+		const actualFolderId = storedRange?.folderId;
+		const removedFromSource = await this.removeFolderReference(sourceFolderId, reference);
+		const removedFromActual = actualFolderId && actualFolderId !== sourceFolderId
+			? await this.removeFolderReference(actualFolderId, reference)
+			: false;
+
+		if (!storedRange) {
+			if (removedFromSource || removedFromActual) {
+				await this.touchManifest();
+			}
+			return {
+				removed: removedFromSource || removedFromActual,
+				prunedDangling: true,
+			};
+		}
+
+		shard.ranges = shard.ranges.filter((item) => item.id !== reference.id);
+		if (shard.ranges.length === 0) {
+			await this.deleteRangeShard(shard);
+		}
+		else {
+			await this.saveRangeShard(shard);
+		}
+		await this.writeIndex();
+		await this.touchManifest();
+		return {
+			removed: true,
+			prunedDangling: false,
+		};
+	}
+
+	async moveRanges(requests: MoveRangeRequest[], targetFolderId: string): Promise<MoveRangeResult[]> {
+		return this.runRangeMutation(() => this.moveRangesUnlocked(requests, targetFolderId));
+	}
+
+	private async moveRangesUnlocked(requests: MoveRangeRequest[], targetFolderId: string): Promise<MoveRangeResult[]> {
+		const results: MoveRangeResult[] = [];
+		for (const request of requests) {
+			results.push(await this.moveRangeUnlocked(request.sourceFolderId, request.reference, targetFolderId));
+		}
+		return results;
+	}
+
+	private async moveRangeUnlocked(sourceFolderId: string, reference: StoredRangeReference, targetFolderId: string): Promise<MoveRangeResult> {
+		if (sourceFolderId === targetFolderId) {
+			return {
+				outcome: 'unchanged',
+				reference,
+			};
+		}
+
+		const shard = await this.loadRangeShardByRelativePath(reference.shard);
+		if (!shard) {
+			const removedFromIndex = await this.removeFolderReference(sourceFolderId, reference);
+			if (removedFromIndex) {
+				await this.touchManifest();
+			}
+			return { outcome: 'missing' };
+		}
+
+		const storedRange = shard.ranges.find((item) => item.id === reference.id);
+		if (!storedRange) {
+			const removedFromIndex = await this.removeFolderReference(sourceFolderId, reference);
+			if (removedFromIndex) {
+				await this.touchManifest();
+			}
+			return { outcome: 'missing' };
+		}
+
+		const actualSourceFolderId = storedRange.folderId;
+		const sourceReference = { id: storedRange.id, shard: reference.shard };
+		const removedFromRequested = await this.removeFolderReference(sourceFolderId, sourceReference);
+		const removedFromActual = actualSourceFolderId !== sourceFolderId
+			? await this.removeFolderReference(actualSourceFolderId, sourceReference)
+			: false;
+
+		if (actualSourceFolderId === targetFolderId) {
+			const addedToTarget = await this.addFolderReferences(targetFolderId, [sourceReference]);
+			if (removedFromRequested || removedFromActual || addedToTarget) {
+				await this.touchManifest();
+			}
+			return {
+				outcome: 'moved',
+				reference: sourceReference,
+			};
+		}
+
+		const duplicate = shard.ranges.find((item) =>
+			item.id !== storedRange.id
+			&& item.folderId === targetFolderId
+			&& sameRangeData(item.range, storedRange.range),
+		);
+		if (duplicate) {
+			shard.ranges = shard.ranges.filter((item) => item.id !== storedRange.id);
+			await this.addFolderReferences(targetFolderId, [{ id: duplicate.id, shard: reference.shard }]);
+			if (shard.ranges.length === 0) {
+				await this.deleteRangeShard(shard);
+			}
+			else {
+				await this.saveRangeShard(shard);
+			}
+			await this.writeIndex();
+			await this.touchManifest();
+			return {
+				outcome: 'deduplicated',
+				reference: {
+					id: duplicate.id,
+					shard: reference.shard,
+				},
+			};
+		}
+
+		storedRange.folderId = targetFolderId;
+		await this.addFolderReferences(targetFolderId, [sourceReference]);
+		await this.saveRangeShard(shard);
+		await this.writeIndex();
+		await this.touchManifest();
+		return {
+			outcome: 'moved',
+			reference: sourceReference,
+		};
+	}
+
 	async removeRangesForFolders(folderIds: Set<string>): Promise<void> {
+		return this.runRangeMutation(() => this.removeRangesForFoldersUnlocked(folderIds));
+	}
+
+	private async removeRangesForFoldersUnlocked(folderIds: Set<string>): Promise<void> {
 		if (folderIds.size === 0) {
 			return;
 		}
@@ -388,6 +554,10 @@ export class PowerSearchStorage {
 	}
 
 	async clearAll(): Promise<void> {
+		return this.runRangeMutation(() => this.clearAllUnlocked());
+	}
+
+	private async clearAllUnlocked(): Promise<void> {
 		try {
 			await vscode.workspace.fs.delete(this.storageRootUri(), { recursive: true });
 		}
@@ -406,6 +576,12 @@ export class PowerSearchStorage {
 
 	getWorkspaceRelativePath(uri: vscode.Uri): WorkspaceFileKey | undefined {
 		return this.keyForUri(uri);
+	}
+
+	private runRangeMutation<T>(operation: () => Promise<T>): Promise<T> {
+		const run = this.rangeMutationQueue.then(operation, operation);
+		this.rangeMutationQueue = run.then(() => undefined, () => undefined);
+		return run;
 	}
 
 	private async initialize(): Promise<void> {
@@ -434,23 +610,25 @@ export class PowerSearchStorage {
 
 	private async loadFolderReferences(folder: FolderItem): Promise<ReferenceItem[]> {
 		const index = await this.loadFolderRanges(folder.id);
-		const shardExists = new Map<string, boolean>();
+		const shardCache = new Map<string, RangeShardFile | undefined>();
 		const references: ReferenceItem[] = [];
 		const seen = new Set<string>();
 		let changed = false;
 
 		for (const reference of index.ranges) {
-			const identity = referenceIdentity(reference);
+			const identity = referenceKey(reference);
 			if (seen.has(identity)) {
 				changed = true;
 				continue;
 			}
 			seen.add(identity);
 
-			const existsForShard = shardExists.get(reference.shard);
-			const resolvedExists = existsForShard ?? await exists(this.relativeUri(reference.shard));
-			shardExists.set(reference.shard, resolvedExists);
-			if (!resolvedExists) {
+			let shard = shardCache.get(reference.shard);
+			if (shard === undefined && !shardCache.has(reference.shard)) {
+				shard = await this.loadRangeShardByRelativePath(reference.shard);
+				shardCache.set(reference.shard, shard);
+			}
+			if (!shard || !shard.ranges.some((item) => item.id === reference.id)) {
 				changed = true;
 				continue;
 			}
@@ -465,21 +643,27 @@ export class PowerSearchStorage {
 		return references;
 	}
 
-	private async addFolderReferences(folderId: string, references: StoredRangeReference[]): Promise<void> {
+	private async addFolderReferences(folderId: string, references: StoredRangeReference[]): Promise<boolean> {
 		if (references.length === 0) {
-			return;
+			return false;
 		}
 		const index = await this.loadFolderRanges(folderId);
-		const seen = new Set(index.ranges.map(referenceIdentity));
+		const seen = new Set(index.ranges.map(referenceKey));
+		let changed = false;
 		for (const reference of references) {
-			const identity = referenceIdentity(reference);
+			const identity = referenceKey(reference);
 			if (seen.has(identity)) {
 				continue;
 			}
 			index.ranges.push(reference);
 			seen.add(identity);
+			changed = true;
+		}
+		if (!changed) {
+			return false;
 		}
 		await this.saveFolderRanges(index);
+		return true;
 	}
 
 	private async loadFolderRanges(folderId: string): Promise<FolderRangesFile> {
@@ -510,6 +694,17 @@ export class PowerSearchStorage {
 	private async deleteFolderRanges(folderId: string): Promise<void> {
 		this.folderRangesCache.delete(folderId);
 		await this.deleteIfExists(this.folderRangesUri(folderId));
+	}
+
+	private async removeFolderReference(folderId: string, reference: StoredRangeReference): Promise<boolean> {
+		const index = await this.loadFolderRanges(folderId);
+		const nextRanges = index.ranges.filter((item) => !sameStoredRangeReference(item, reference));
+		if (nextRanges.length === index.ranges.length) {
+			return false;
+		}
+		index.ranges = nextRanges;
+		await this.saveFolderRanges(index);
+		return true;
 	}
 
 	private async migrateLegacyStateIfNeeded(): Promise<void> {
@@ -933,12 +1128,11 @@ function rangeIdentity(range: Pick<StoredRange, 'folderId' | 'range'>): string {
 	].join(':');
 }
 
-function referenceIdentity(reference: StoredRangeReference): string {
-	return `${reference.id}\0${reference.shard}`;
-}
-
-function sameReference(left: StoredRangeReference, right: StoredRangeReference): boolean {
-	return left.id === right.id && left.shard === right.shard;
+function sameRangeData(left: StoredRange['range'], right: StoredRange['range']): boolean {
+	return left.start.line === right.start.line
+		&& left.start.character === right.start.character
+		&& left.end.line === right.end.line
+		&& left.end.character === right.end.character;
 }
 
 function parentUri(uri: vscode.Uri): vscode.Uri {

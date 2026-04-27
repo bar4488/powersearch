@@ -11,7 +11,17 @@ import {
 	TreeNode,
 	VisibleRootItem,
 	createReferenceItem,
+	sameStoredRangeReference,
 } from './tree_item';
+
+interface ReferenceDragData {
+	reference: StoredRangeReference;
+	sourceFolderId: string;
+}
+
+const TREE_MIME = 'application/vnd.code.tree.powersearch-explorer.folders';
+const FOLDER_MIME = 'application/powersearch.folder';
+const REFERENCE_MIME = 'application/powersearch.reference';
 
 export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
@@ -50,15 +60,24 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		this.refresh();
 	}
 
-	dropMimeTypes = ['application/powersearch.folder'];
-	dragMimeTypes = ['application/powersearch.folder'];
+	dropMimeTypes = [TREE_MIME, FOLDER_MIME, REFERENCE_MIME];
+	dragMimeTypes = [FOLDER_MIME, REFERENCE_MIME];
 
 	public async handleDrop(target: TreeNode | undefined, sources: vscode.DataTransfer): Promise<void> {
-		const transferItem = sources.get('application/powersearch.folder');
-		if (!transferItem) {
+		const referenceTransfer = sources.get(REFERENCE_MIME);
+		if (referenceTransfer) {
+			await this.handleReferenceDrop(target, referenceTransfer.value as ReferenceDragData[]);
 			return;
 		}
-		const indicesList = transferItem.value as number[][];
+
+		const folderTransfer = sources.get(FOLDER_MIME);
+		if (folderTransfer) {
+			await this.handleFolderDrop(target, folderTransfer.value as number[][]);
+			return;
+		}
+	}
+
+	private async handleFolderDrop(target: TreeNode | undefined, indicesList: number[][]): Promise<void> {
 		if (indicesList.length === 0) {
 			return;
 		}
@@ -70,6 +89,9 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 				return;
 			}
 			nodes.push(node);
+		}
+		if (nodes.length === 0) {
+			return;
 		}
 
 		const targetNode = target?.type === 'folder'
@@ -98,21 +120,84 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		this.updateTree();
 	}
 
+	private async handleReferenceDrop(target: TreeNode | undefined, dragItems: ReferenceDragData[]): Promise<void> {
+		const targetFolder = target?.type === 'folder'
+			? target
+			: target?.type === 'ref'
+				? target.parent
+				: undefined;
+		if (!targetFolder || dragItems.length === 0) {
+			return;
+		}
+
+		const requests: Array<{ item: ReferenceItem; sourceFolderId: string; }> = [];
+		for (const dragItem of dedupeReferenceDragItems(dragItems)) {
+			const sourceFolder = this.findFolder(dragItem.sourceFolderId);
+			const item = sourceFolder?.references.find((reference) => sameStoredRangeReference(reference, dragItem.reference));
+			if (!sourceFolder || !item) {
+				continue;
+			}
+			requests.push({ item, sourceFolderId: sourceFolder.id });
+		}
+		if (requests.length === 0) {
+			return;
+		}
+
+		const results = await this.storage.moveRanges(
+			requests.map(({ item, sourceFolderId }) => ({ sourceFolderId, reference: item })),
+			targetFolder.id,
+		);
+
+		let changed = false;
+		for (const [index, result] of results.entries()) {
+			const request = requests[index];
+			if (!request) {
+				continue;
+			}
+			if (result.outcome === 'missing') {
+				changed = this.removeReference(request.item, false) || changed;
+				continue;
+			}
+			if (!result.reference || result.outcome === 'unchanged') {
+				continue;
+			}
+			changed = this.moveReference(request.item, targetFolder, result.reference, false) || changed;
+		}
+
+		if (changed) {
+			this.refresh();
+		}
+	}
+
 	public async handleDrag(source: TreeNode[], treeDataTransfer: vscode.DataTransfer): Promise<void> {
-		if (source.length === 0 || source.some((node) => node.type !== 'folder')) {
+		if (source.length === 0) {
+			return;
+		}
+		const references = source
+			.filter((node): node is ReferenceItem => node.type === 'ref')
+			.filter((reference): reference is ReferenceItem & { parent: FolderItem; } => !!reference.parent);
+		if (references.length > 0) {
+			const dragItems = references.map((reference) => ({
+				reference: { id: reference.id, shard: reference.shard },
+				sourceFolderId: reference.parent.id,
+			}));
+			treeDataTransfer.set(REFERENCE_MIME, new vscode.DataTransferItem(dragItems));
 			return;
 		}
 
-		const folders = source as FolderItem[];
-		const parent = folders[0].parent;
-		if (folders.some((node) => node.parent !== parent)) {
+		if (source.every((node) => node.type === 'folder')) {
+			const folders = source as FolderItem[];
+			const parent = folders[0].parent;
+			if (folders.some((node) => node.parent !== parent)) {
+				return;
+			}
+
+			const sourceIndices = folders
+				.map((node) => nodeToIndices(node))
+				.filter((indices): indices is number[] => indices !== undefined);
+			treeDataTransfer.set(FOLDER_MIME, new vscode.DataTransferItem(sourceIndices));
 			return;
 		}
-
-		const sourceIndices = folders
-			.map((node) => nodeToIndices(node))
-			.filter((indices): indices is number[] => indices !== undefined);
-		treeDataTransfer.set('application/powersearch.folder', new vscode.DataTransferItem(sourceIndices));
 	}
 
 	dispose(): void {
@@ -203,6 +288,36 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		folder.expanded = true;
 		folder.references.push(...references.map((reference) => createReferenceItem({ ...reference, parent: folder })));
 		this.refresh();
+	}
+
+	public removeReference(reference: ReferenceItem, refresh: boolean = true): boolean {
+		const parent = reference.parent;
+		if (!parent) {
+			return false;
+		}
+		const nextReferences = parent.references.filter((item) => item !== reference);
+		if (nextReferences.length === parent.references.length) {
+			return false;
+		}
+		parent.references = nextReferences;
+		if (refresh) {
+			this.refresh();
+		}
+		return true;
+	}
+
+	public moveReference(reference: ReferenceItem, targetFolder: FolderItem, nextReference: StoredRangeReference = reference, refresh: boolean = true): boolean {
+		const removed = this.removeReference(reference, false);
+		let added = false;
+		if (!targetFolder.references.some((item) => sameStoredRangeReference(item, nextReference))) {
+			targetFolder.references.push(createReferenceItem({ ...nextReference, parent: targetFolder }));
+			added = true;
+		}
+		targetFolder.expanded = true;
+		if (refresh) {
+			this.refresh();
+		}
+		return removed || added;
 	}
 
 	public removeNode(node: FolderItem): Set<string> {
@@ -442,8 +557,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			return;
 		}
 		await this.storage.removeDanglingReference(parent.id, reference);
-		parent.references = parent.references.filter((item) => item !== reference);
-		this.refresh();
+		this.removeReference(reference);
 	}
 
 	private findFolder(folderId: string): FolderItem | undefined {
@@ -462,4 +576,18 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return node.children.some((child) => this.containsNode(child, searchNode));
 	}
 
+}
+
+function dedupeReferenceDragItems(items: ReferenceDragData[]): ReferenceDragData[] {
+	const seen = new Set<string>();
+	const result: ReferenceDragData[] = [];
+	for (const item of items) {
+		const identity = `${item.sourceFolderId}\0${item.reference.id}\0${item.reference.shard}`;
+		if (seen.has(identity)) {
+			continue;
+		}
+		seen.add(identity);
+		result.push(item);
+	}
+	return result;
 }

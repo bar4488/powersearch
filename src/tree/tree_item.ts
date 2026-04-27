@@ -103,6 +103,14 @@ export function createReferenceItem(data: Omit<ReferenceItem, 'type'>): Referenc
 	};
 }
 
+export function referenceKey(reference: StoredRangeReference): string {
+	return `${reference.id}\0${reference.shard}`;
+}
+
+export function sameStoredRangeReference(left: StoredRangeReference, right: StoredRangeReference): boolean {
+	return left.id === right.id && left.shard === right.shard;
+}
+
 export function createId(prefix: string): string {
 	return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 }

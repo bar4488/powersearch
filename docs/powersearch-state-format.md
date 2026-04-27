@@ -128,7 +128,7 @@ Stores the ranges that should appear under each tree folder without duplicating 
 }
 ```
 
-Each entry is a reference to the real range record stored in a file shard. If a folder index points to a missing shard file, PowerSearch drops that dangling entry when loading the folder tree.
+Each entry is a reference to the real range record stored in a file shard. If a folder index points to a missing shard file or to a missing range id inside an existing shard, PowerSearch drops that dangling entry when loading the folder tree.
 
 ## `ui.json`
 
@@ -216,6 +216,7 @@ Files outside the open workspace cannot be represented in the current format and
 - Saved searches are lazy: PowerSearch only opens files and computes match ranges when a search is run in the Search view.
 - Decorations for an editor read only that editor's range shard.
 - Adding a range rewrites one file shard, one folder index, and the small file index.
+- Moving ranges by drag-and-drop or deleting them from the tree rewrites the affected file shard plus the affected folder indexes, and updates the file index when shard counts change.
 - Saving or deleting a saved search rewrites only `searches.json`.
 - Renaming, recoloring, hiding, retargeting, or expanding folders rewrites only `folders.json` and `ui.json`.
 - Deleting a folder removes its Markdown notes file, removes its folder-index file, removes ranges for that folder from affected shards, and updates the file index.
@@ -224,5 +225,5 @@ Files outside the open workspace cannot be represented in the current format and
 
 - Unsupported `schemaVersion` values should fail closed with a warning.
 - Unknown optional fields should be preserved by migrations when practical.
-- Folder indexes must not keep dangling references to missing shard files.
+- Folder indexes must not keep dangling references to missing shard files or missing range ids.
 - Legacy absolute-URI state is migrated only when the referenced files are inside the open workspace. The migrated current-format files contain workspace-folder names and relative paths only.

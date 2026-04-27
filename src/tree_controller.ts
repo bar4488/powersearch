@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { DecorationManager } from './decorator';
 import { PowerSearchStorage } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { FolderItem, SavedSearchData, SearchScope, TreeNode, VisibleRootItem, createFolderItem, createId } from './tree/tree_item';
+import { FolderItem, ReferenceItem, SavedSearchData, SearchScope, TreeNode, VisibleRootItem, createFolderItem, createId } from './tree/tree_item';
 import { getPreviewChunks, isValidColor } from './utils';
 
 const defaultColors = [
@@ -253,6 +253,28 @@ export class TreeController {
 		await this.storage.removeFolderDocs(removedFolderIds);
 		await this.storage.removeRangesForFolders(removedFolderIds);
 		await this.decorations.updateVisibleEditors();
+	}
+
+	public async onDeleteRange(reference: ReferenceItem) {
+		const sourceFolder = reference.parent;
+		if (!sourceFolder) {
+			return;
+		}
+
+		const choice = await vscode.window.showWarningMessage(
+			'Delete this range from PowerSearch?',
+			{ modal: true },
+			'Delete Range',
+		);
+		if (choice !== 'Delete Range') {
+			return;
+		}
+
+		const result = await this.storage.deleteRange(sourceFolder.id, reference);
+		this.tree.removeReference(reference);
+		if (result.removed) {
+			await this.decorations.updateVisibleEditors();
+		}
 	}
 
 	public async onAddFolder(parent?: FolderItem | VisibleRootItem) {

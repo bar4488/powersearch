@@ -3,7 +3,7 @@ import { DecorationManager } from './decorator';
 import { SearchViewProvider } from './search_view';
 import { PowerSearchStorage } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { FolderItem, TreeNode, VisibleRootItem } from './tree/tree_item';
+import { FolderItem, ReferenceItem, TreeNode, VisibleRootItem } from './tree/tree_item';
 import { TreeController } from './tree_controller';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -50,6 +50,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		tree.onDidChangeTreeData(() => {
 			updateTargetStatus();
 			searchView.refresh();
+			void decorations.updateVisibleEditors();
 		}),
 		vscode.window.registerWebviewViewProvider('powersearch-explorer.search', searchView),
 		foldersTreeView.onDidExpandElement((event) => {
@@ -73,6 +74,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('powersearch.chooseFolderColor', async (item: FolderItem | VisibleRootItem) => controller.onChangeFolderColor(item)),
 		vscode.commands.registerCommand('powersearch.renameFolder', async (folder: FolderItem) => controller.onRenameFolder(folder)),
 		vscode.commands.registerCommand('powersearch.removeFolder', async (folder: FolderItem) => controller.onRemoveFolder(folder)),
+		vscode.commands.registerCommand('powersearch.deleteRange', async (reference: ReferenceItem) => controller.onDeleteRange(reference)),
 		vscode.commands.registerCommand('powersearch.addFolder', async (folder?: FolderItem | VisibleRootItem) => controller.onAddFolder(folder)),
 		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityShow', (item: FolderItem | VisibleRootItem) => controller.onToggleFolderVisibility(item)),
 		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityHide', (item: FolderItem | VisibleRootItem) => controller.onToggleFolderVisibility(item)),
