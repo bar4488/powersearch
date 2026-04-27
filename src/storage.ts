@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { FolderData, FolderItem, ReferenceItem, SavedSearchData, StoredRange, StoredRangeReference, createFolderItem, createId, createReferenceItem, rangeFromData, rangeToData, referenceKey, sameStoredRangeReference } from './tree/tree_item';
+import { FolderData, FolderItem, PositionData, ReferenceItem, SavedSearchData, StoredRange, StoredRangeReference, createFolderItem, createId, createReferenceItem, rangeFromData, rangeToData, referenceKey, sameStoredRangeReference } from './tree/tree_item';
 
 const STORAGE_DIRECTORY = '.powersearch';
 const MANIFEST_FILE = 'manifest.json';
@@ -121,6 +121,11 @@ export interface StoredDocumentRange {
 export interface ResolvedReference {
 	location: vscode.Location;
 	storedRange: StoredRange;
+}
+
+export interface UpdateRangesForDocumentResult {
+	changed: boolean;
+	removedReferences: StoredRangeReference[];
 }
 
 export class PowerSearchStorage {
@@ -414,6 +419,76 @@ export class PowerSearchStorage {
 		await this.saveRangeShard(shard);
 		await this.touchManifest();
 		return true;
+	}
+
+	async updateRangesForDocumentChanges(
+		previousText: string,
+		document: vscode.TextDocument,
+		contentChanges: readonly vscode.TextDocumentContentChangeEvent[],
+	): Promise<UpdateRangesForDocumentResult> {
+		return this.runRangeMutation(() => this.updateRangesForDocumentChangesUnlocked(previousText, document, contentChanges));
+	}
+
+	private async updateRangesForDocumentChangesUnlocked(
+		previousText: string,
+		document: vscode.TextDocument,
+		contentChanges: readonly vscode.TextDocumentContentChangeEvent[],
+	): Promise<UpdateRangesForDocumentResult> {
+		const key = this.keyForUri(document.uri);
+		if (!key || contentChanges.length === 0 || !this.findIndexEntry(key)) {
+			return { changed: false, removedReferences: [] };
+		}
+
+		const shard = await this.loadRangeShard(key);
+		if (shard.ranges.length === 0) {
+			return { changed: false, removedReferences: [] };
+		}
+
+		const orderedChanges = [...contentChanges]
+			.filter((change) => change.rangeLength > 0 || change.text.length > 0)
+			.sort((left, right) => right.rangeOffset - left.rangeOffset);
+		if (orderedChanges.length === 0) {
+			return { changed: false, removedReferences: [] };
+		}
+
+		const shardPath = shardRelativePath(key);
+		const nextRanges: StoredRange[] = [];
+		const removedReferences: StoredRangeReference[] = [];
+		let changed = false;
+		const previousLineOffsets = computeLineOffsets(previousText);
+		for (const storedRange of shard.ranges) {
+			const nextRange = transformStoredRange(previousText, previousLineOffsets, document, storedRange, orderedChanges);
+			if (!nextRange) {
+				removedReferences.push({ id: storedRange.id, shard: shardPath });
+				await this.removeFolderReference(storedRange.folderId, { id: storedRange.id, shard: shardPath });
+				changed = true;
+				continue;
+			}
+			if (!sameRangeData(storedRange.range, nextRange.range)) {
+				changed = true;
+			}
+			nextRanges.push(nextRange);
+		}
+
+		if (!changed) {
+			return { changed: false, removedReferences: [] };
+		}
+
+		shard.ranges = nextRanges;
+		if (shard.ranges.length === 0) {
+			await this.deleteRangeShard(shard);
+		}
+		else {
+			await this.saveRangeShard(shard);
+		}
+		if (removedReferences.length > 0) {
+			await this.writeIndex();
+		}
+		await this.touchManifest();
+		return {
+			changed: true,
+			removedReferences,
+		};
 	}
 
 	async removeDanglingReference(folderId: string, reference: StoredRangeReference): Promise<void> {
@@ -1189,9 +1264,94 @@ function sameRangeData(left: StoredRange['range'], right: StoredRange['range']):
 		&& left.end.character === right.end.character;
 }
 
+function transformStoredRange(
+	previousText: string,
+	previousLineOffsets: number[],
+	document: vscode.TextDocument,
+	storedRange: StoredRange,
+	contentChanges: readonly vscode.TextDocumentContentChangeEvent[],
+): StoredRange | undefined {
+	let startOffset = offsetAtInText(previousText, previousLineOffsets, storedRange.range.start);
+	let endOffset = offsetAtInText(previousText, previousLineOffsets, storedRange.range.end);
+
+	for (const change of contentChanges) {
+		const changeStart = change.rangeOffset;
+		const changeEnd = change.rangeOffset + change.rangeLength;
+		const insertedLength = change.text.length;
+		if (change.rangeLength === 0) {
+			if (changeStart <= startOffset) {
+				startOffset += insertedLength;
+				endOffset += insertedLength;
+			}
+			else if (changeStart < endOffset) {
+				endOffset += insertedLength;
+			}
+			continue;
+		}
+
+		const delta = insertedLength - change.rangeLength;
+		startOffset = transformRangeStartOffset(startOffset, changeStart, changeEnd, delta);
+		endOffset = transformRangeEndOffset(endOffset, changeStart, changeEnd, delta, insertedLength);
+	}
+
+	startOffset = Math.max(0, Math.min(startOffset, document.getText().length));
+	endOffset = Math.max(startOffset, Math.min(endOffset, document.getText().length));
+	if (startOffset === endOffset) {
+		return undefined;
+	}
+
+	return {
+		...storedRange,
+		range: rangeToData(new vscode.Range(document.positionAt(startOffset), document.positionAt(endOffset))),
+	};
+}
+
+function transformRangeStartOffset(offset: number, changeStart: number, changeEnd: number, delta: number): number {
+	if (offset < changeStart) {
+		return offset;
+	}
+	if (offset >= changeEnd) {
+		return offset + delta;
+	}
+	return changeStart;
+}
+
+function transformRangeEndOffset(
+	offset: number,
+	changeStart: number,
+	changeEnd: number,
+	delta: number,
+	insertedLength: number,
+): number {
+	if (offset <= changeStart) {
+		return offset;
+	}
+	if (offset >= changeEnd) {
+		return offset + delta;
+	}
+	return changeStart + insertedLength;
+}
+
 function parentUri(uri: vscode.Uri): vscode.Uri {
 	const parentPath = uri.path.replace(/\/[^/]*$/, '') || '/';
 	return uri.with({ path: parentPath });
+}
+
+function computeLineOffsets(text: string): number[] {
+	const offsets = [0];
+	for (let index = 0; index < text.length; index += 1) {
+		if (text.charCodeAt(index) === 10) {
+			offsets.push(index + 1);
+		}
+	}
+	return offsets;
+}
+
+function offsetAtInText(text: string, lineOffsets: number[], position: PositionData): number {
+	const line = Math.max(0, Math.min(position.line, lineOffsets.length - 1));
+	const lineStart = lineOffsets[line];
+	const lineEnd = line + 1 < lineOffsets.length ? lineOffsets[line + 1] - 1 : text.length;
+	return Math.max(lineStart, Math.min(lineStart + position.character, lineEnd));
 }
 
 function legacyLocationToVscode(location: any): vscode.Location | undefined {

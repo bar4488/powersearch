@@ -306,6 +306,25 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return true;
 	}
 
+	public removeReferences(references: StoredRangeReference[]) {
+		if (references.length === 0) {
+			return;
+		}
+		const keys = new Set(references.map((reference) => `${reference.id}\0${reference.shard}`));
+		let changed = false;
+		for (const folder of this.flattenFolders()) {
+			const nextReferences = folder.references.filter((reference) => !keys.has(`${reference.id}\0${reference.shard}`));
+			if (nextReferences.length === folder.references.length) {
+				continue;
+			}
+			folder.references = nextReferences;
+			changed = true;
+		}
+		if (changed) {
+			this.refresh();
+		}
+	}
+
 	public moveReference(reference: ReferenceItem, targetFolder: FolderItem, nextReference: StoredRangeReference = reference, refresh: boolean = true): boolean {
 		const removed = this.removeReference(reference, false);
 		let added = false;

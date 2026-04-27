@@ -25,6 +25,9 @@ export async function activate(context: vscode.ExtensionContext) {
 	const searchView = new SearchViewProvider(controller);
 	const foldersTreeView = vscode.window.createTreeView('powersearch-explorer.folders', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true, dragAndDropController: tree });
 	const targetStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+	const documentSnapshots = new Map<string, string>(
+		vscode.workspace.textDocuments.map((document) => [document.uri.toString(), document.getText()]),
+	);
 
 	const updateTargetStatus = () => {
 		const folder = tree.getSelectedFolder();
@@ -65,6 +68,27 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		vscode.window.onDidChangeVisibleTextEditors(() => decorations.updateVisibleEditors()),
 		vscode.window.onDidChangeActiveTextEditor(() => decorations.updateVisibleEditors()),
+		vscode.workspace.onDidOpenTextDocument((document) => {
+			documentSnapshots.set(document.uri.toString(), document.getText());
+		}),
+		vscode.workspace.onDidCloseTextDocument((document) => {
+			documentSnapshots.delete(document.uri.toString());
+		}),
+		vscode.workspace.onDidChangeTextDocument(async (event) => {
+			const documentKey = event.document.uri.toString();
+			const previousText = documentSnapshots.get(documentKey);
+			documentSnapshots.set(documentKey, event.document.getText());
+			if (previousText === undefined || event.contentChanges.length === 0) {
+				return;
+			}
+			const result = await storage.updateRangesForDocumentChanges(previousText, event.document, event.contentChanges);
+			if (!result.changed) {
+				return;
+			}
+			tree.removeReferences(result.removedReferences);
+			tree.refreshTree();
+			await decorations.updateVisibleEditors();
+		}),
 		vscode.commands.registerCommand('powersearch.colorSymbol', () => controller.onColorSymbol()),
 		vscode.commands.registerCommand('powersearch.colorLine', () => controller.onColorLine()),
 		vscode.commands.registerCommand('powersearch.colorSelection', () => controller.onColorSelection()),

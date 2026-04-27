@@ -218,6 +218,7 @@ Files outside the open workspace cannot be represented in the current format and
 - Decorations for an editor read only that editor's range shard.
 - Adding a range rewrites one file shard, one folder index, and the small file index.
 - Editing a range comment rewrites only the affected file shard.
+- Ordinary text edits in a tracked file rewrite only that file's shard, and prune folder-index entries for ranges that collapse away.
 - Moving ranges by drag-and-drop or deleting them from the tree rewrites the affected file shard plus the affected folder indexes, and updates the file index when shard counts change.
 - Saving or deleting a saved search rewrites only `searches.json`.
 - Renaming, recoloring, hiding, retargeting, or expanding folders rewrites only `folders.json` and `ui.json`.
