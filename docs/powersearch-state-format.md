@@ -10,6 +10,7 @@ No current-format file stores absolute workspace paths or absolute source-file p
 <chosen-workspace-folder>/.powersearch/
   manifest.json
   folders.json
+  searches.json
   ui.json
   docs/
     root.md
@@ -86,6 +87,30 @@ Stores optional Markdown notes for the synthetic root and for folders. These fil
 
 Folder note paths are deterministic by `folderId`, so folder renames do not orphan notes. The synthetic root always uses `docs/root.md`.
 
+## `searches.json`
+
+Stores saved search definitions used by the dedicated `Search` side-bar view.
+
+```json
+{
+  "schemaVersion": 2,
+  "searches": [
+    {
+      "id": "srch_2e3c...",
+      "name": "TODOs in src",
+      "pattern": "TODO|FIXME",
+      "isRegex": true,
+      "scope": "selectedWorkspaces",
+      "workspaceNames": ["frontend"],
+      "includes": "src/**/*",
+      "excludes": "**/dist/**"
+    }
+  ]
+}
+```
+
+Saved searches store only search intent, not search results. Search results become normal PowerSearch ranges only when the user explicitly saves them into a folder.
+
 ## `indexes/folders/.../*.json`
 
 Stores the ranges that should appear under each tree folder without duplicating the actual range payload.
@@ -107,7 +132,7 @@ Each entry is a reference to the real range record stored in a file shard. If a 
 
 ## `ui.json`
 
-Stores persistent UI state, including the current target folder for new ranges and the synthetic root's shared color/visibility/expanded state.
+Stores persistent UI state, including the current target folder for new ranges and the folder root's shared color/visibility/expanded state.
 
 ```json
 {
@@ -120,6 +145,8 @@ Stores persistent UI state, including the current target folder for new ranges a
 ```
 
 `selectedFolderId` may be `null`.
+
+Older files may still contain `searchRootExpanded`; the current search UI does not depend on it.
 
 ## `indexes/files.json`
 
@@ -182,12 +209,14 @@ Files outside the open workspace cannot be represented in the current format and
 
 ## Performance Model
 
-- Startup reads `manifest.json`, `folders.json`, `ui.json`, and `indexes/files.json`.
+- Startup reads `manifest.json`, `folders.json`, `searches.json`, `ui.json`, and `indexes/files.json`.
 - Tree rendering reads the lightweight per-folder indexes to reconstruct reference rows without loading every file shard up front.
 - Folder notes are lazy-loaded only when the user opens a folder's Markdown file.
 - The synthetic root's UI state is read from `ui.json`; its color acts as the fallback parent color for inherited folders, and its hidden state suppresses all descendant decorations.
+- Saved searches are lazy: PowerSearch only opens files and computes match ranges when a search is run in the Search view.
 - Decorations for an editor read only that editor's range shard.
 - Adding a range rewrites one file shard, one folder index, and the small file index.
+- Saving or deleting a saved search rewrites only `searches.json`.
 - Renaming, recoloring, hiding, retargeting, or expanding folders rewrites only `folders.json` and `ui.json`.
 - Deleting a folder removes its Markdown notes file, removes its folder-index file, removes ranges for that folder from affected shards, and updates the file index.
 

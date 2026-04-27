@@ -18,8 +18,6 @@ Priority scale:
 - [ ] `[P2]` Add a strategy for stale ranges.
   - Stored `Range`s drift as files are edited.
 - [ ] `[P2]` Add confirmation before deleting folders with children.
-- [ ] `[P2]` Replace the README template with actual usage, limitations, and command documentation.
-- [ ] `[P2]` Document the new target-folder workflow, inherited colors, root actions, and folder docs.
 - [ ] `[P2]` Add CI for `npm run compile`, `npm run lint`, and behavior tests.
 - [ ] `[P2]` Replace the generated sample test with real behavior tests.
   - Cover activation, commands, sharded persistence, deletion, color changes, visibility, missing files, and drag/drop.
@@ -62,3 +60,6 @@ Priority scale:
 - [x] ~~Refresh the folder tree visuals.~~ Fixed with custom folder icons plus clearer target and inherited-color badges/tooltips.
 - [x] ~~Add inherited folder colors.~~ Fixed with a `Parent` color mode, resolved ancestor-color handling in decorations, and persisted `inheritsColor` folder metadata.
 - [x] ~~Add per-folder Markdown docs.~~ Fixed with deterministic `.powersearch/docs/<folder-id>.md` notes and cleanup on folder deletion.
+- [x] ~~Replace the README template with actual usage, limitations, and command documentation.~~ Fixed by documenting the current folder/tree/search workflow in `README.md`.
+- [x] ~~Document the new target-folder workflow, inherited colors, root actions, and folder docs.~~ Fixed by updating `README.md` and `docs/powersearch-state-format.md`.
+- [x] ~~Add a search workflow with save-results flows.~~ Fixed with a dedicated Search view and inline search/result actions.

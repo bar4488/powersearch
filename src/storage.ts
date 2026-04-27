@@ -1,10 +1,11 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { FolderData, FolderItem, ReferenceItem, StoredRange, StoredRangeReference, createFolderItem, createId, createReferenceItem, rangeFromData, rangeToData } from './tree/tree_item';
+import { FolderData, FolderItem, ReferenceItem, SavedSearchData, StoredRange, StoredRangeReference, createFolderItem, createId, createReferenceItem, rangeFromData, rangeToData } from './tree/tree_item';
 
 const STORAGE_DIRECTORY = '.powersearch';
 const MANIFEST_FILE = 'manifest.json';
 const FOLDERS_FILE = 'folders.json';
+const SEARCHES_FILE = 'searches.json';
 const UI_FILE = 'ui.json';
 const FILES_INDEX = 'indexes/files.json';
 const FOLDER_RANGES_DIRECTORY = 'indexes/folders';
@@ -37,6 +38,12 @@ interface UiFile {
 	rootColor?: string;
 	rootIsHidden?: boolean;
 	rootExpanded?: boolean;
+	searchRootExpanded?: boolean;
+}
+
+interface SearchesFile {
+	schemaVersion: typeof SCHEMA_VERSION;
+	searches: SavedSearchData[];
 }
 
 interface FileIndex {
@@ -81,6 +88,8 @@ export interface LoadedPowerSearchState {
 	rootColor?: string;
 	rootIsHidden: boolean;
 	rootExpanded: boolean;
+	searches: SavedSearchData[];
+	searchRootExpanded: boolean;
 }
 
 export interface AddRangesResult {
@@ -132,12 +141,22 @@ export class PowerSearchStorage {
 		try {
 			await this.migrateLegacyStateIfNeeded();
 			const folders = await this.readJson<FoldersFile>(this.foldersUri(), { schemaVersion: SCHEMA_VERSION, folders: [] });
-			const ui = await this.readJson<UiFile>(this.uiUri(), { schemaVersion: SCHEMA_VERSION, selectedFolderId: null, rootIsHidden: false, rootExpanded: true });
+			const ui = await this.readJson<UiFile>(this.uiUri(), {
+				schemaVersion: SCHEMA_VERSION,
+				selectedFolderId: null,
+				rootIsHidden: false,
+				rootExpanded: true,
+				searchRootExpanded: true,
+			});
+			const searches = await this.readJson<SearchesFile>(this.searchesUri(), { schemaVersion: SCHEMA_VERSION, searches: [] });
 			if (folders.schemaVersion !== SCHEMA_VERSION || !Array.isArray(folders.folders)) {
 				throw new Error('Unsupported folders.json schema.');
 			}
 			if (ui.schemaVersion !== SCHEMA_VERSION) {
 				throw new Error('Unsupported ui.json schema.');
+			}
+			if (searches.schemaVersion !== SCHEMA_VERSION || !Array.isArray(searches.searches)) {
+				throw new Error('Unsupported searches.json schema.');
 			}
 
 			const loadedFolders = folders.folders.map((folder) => deserializeFolder(folder));
@@ -148,11 +167,20 @@ export class PowerSearchStorage {
 				rootColor: ui.rootColor,
 				rootIsHidden: ui.rootIsHidden ?? false,
 				rootExpanded: ui.rootExpanded ?? true,
+				searches: searches.searches,
+				searchRootExpanded: ui.searchRootExpanded ?? true,
 			};
 		}
 		catch (error) {
 			void vscode.window.showWarningMessage(`PowerSearch could not load .powersearch data: ${error instanceof Error ? error.message : String(error)}`);
-			return { folders: [], selectedFolderId: null, rootIsHidden: false, rootExpanded: true };
+			return {
+				folders: [],
+				selectedFolderId: null,
+				rootIsHidden: false,
+				rootExpanded: true,
+				searches: [],
+				searchRootExpanded: true,
+			};
 		}
 	}
 
@@ -164,13 +192,29 @@ export class PowerSearchStorage {
 		await this.touchManifest();
 	}
 
-	async saveUi(selectedFolderId: string | null, rootState?: { color?: string; isHidden: boolean; expanded: boolean; }): Promise<void> {
+	async saveUi(
+		selectedFolderId: string | null,
+		rootState?: { color?: string; isHidden: boolean; expanded: boolean; },
+	): Promise<void> {
 		await this.writeJson(this.uiUri(), {
 			schemaVersion: SCHEMA_VERSION,
 			selectedFolderId,
 			rootColor: rootState?.color,
 			rootIsHidden: rootState?.isHidden ?? false,
 			rootExpanded: rootState?.expanded ?? true,
+		});
+		await this.touchManifest();
+	}
+
+	async saveSearches(searches: SavedSearchData[]): Promise<void> {
+		if (searches.length === 0) {
+			await this.deleteIfExists(this.searchesUri());
+			await this.touchManifest();
+			return;
+		}
+		await this.writeJson(this.searchesUri(), {
+			schemaVersion: SCHEMA_VERSION,
+			searches,
 		});
 		await this.touchManifest();
 	}
@@ -710,6 +754,10 @@ export class PowerSearchStorage {
 
 	private foldersUri(): vscode.Uri {
 		return vscode.Uri.joinPath(this.storageRootUri(), FOLDERS_FILE);
+	}
+
+	private searchesUri(): vscode.Uri {
+		return vscode.Uri.joinPath(this.storageRootUri(), SEARCHES_FILE);
 	}
 
 	private uiUri(): vscode.Uri {

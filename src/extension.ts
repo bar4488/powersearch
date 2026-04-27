@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { DecorationManager } from './decorator';
+import { SearchViewProvider } from './search_view';
 import { PowerSearchStorage } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
 import { FolderItem, TreeNode, VisibleRootItem } from './tree/tree_item';
@@ -16,11 +17,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		color: savedState.rootColor,
 		isHidden: savedState.rootIsHidden,
 		expanded: savedState.rootExpanded,
-	});
+	}, savedState.searches);
 	tree.restoreSelectedFolder(savedState.selectedFolderId);
 
 	const decorations = new DecorationManager(storage, tree);
 	const controller = new TreeController(tree, storage, decorations);
+	const searchView = new SearchViewProvider(controller);
 	const foldersTreeView = vscode.window.createTreeView('powersearch-explorer.folders', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true, dragAndDropController: tree });
 	const targetStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
 
@@ -43,8 +45,13 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		foldersTreeView,
 		decorations,
+		searchView,
 		targetStatus,
-		tree.onDidChangeTreeData(() => updateTargetStatus()),
+		tree.onDidChangeTreeData(() => {
+			updateTargetStatus();
+			searchView.refresh();
+		}),
+		vscode.window.registerWebviewViewProvider('powersearch-explorer.search', searchView),
 		foldersTreeView.onDidExpandElement((event) => {
 			if (event.element.type === 'folder' || event.element.type === 'foldersRoot') {
 				tree.setExpanded(event.element, true);
@@ -66,7 +73,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('powersearch.chooseFolderColor', async (item: FolderItem | VisibleRootItem) => controller.onChangeFolderColor(item)),
 		vscode.commands.registerCommand('powersearch.renameFolder', async (folder: FolderItem) => controller.onRenameFolder(folder)),
 		vscode.commands.registerCommand('powersearch.removeFolder', async (folder: FolderItem) => controller.onRemoveFolder(folder)),
-		vscode.commands.registerCommand('powersearch.addFolder', async (folder?: FolderItem) => controller.onAddFolder(folder)),
+		vscode.commands.registerCommand('powersearch.addFolder', async (folder?: FolderItem | VisibleRootItem) => controller.onAddFolder(folder)),
 		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityShow', (item: FolderItem | VisibleRootItem) => controller.onToggleFolderVisibility(item)),
 		vscode.commands.registerCommand('powersearch.toggleFolderVisibilityHide', (item: FolderItem | VisibleRootItem) => controller.onToggleFolderVisibility(item)),
 		vscode.commands.registerCommand('powersearch.removeData', async () => {
@@ -81,6 +88,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('powersearch.selectFolder', (node: TreeNode) => controller.onSelectNode(node)),
 		vscode.commands.registerCommand('powersearch.saveTree', async () => {
 			await storage.saveFolders(tree.getNodes());
+			await storage.saveSearches(tree.getSavedSearches());
 			await storage.saveUi(tree.getSelectedFolderId(), tree.getRootState());
 		}),
 	);

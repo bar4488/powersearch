@@ -1,7 +1,17 @@
 import * as vscode from 'vscode';
 import { PowerSearchStorage } from '../storage';
 import { folderAndAncestorsVisible, folderBadgeText, getPreviewChunks, indicesToNode, nodeToIndices, resolveFolderColor } from '../utils';
-import { FolderItem, ParentNode, ReferenceItem, RootItem, StoredRangeReference, TreeNode, VisibleRootItem, createReferenceItem } from './tree_item';
+import {
+	FolderItem,
+	ParentNode,
+	ReferenceItem,
+	RootItem,
+	SavedSearchData,
+	StoredRangeReference,
+	TreeNode,
+	VisibleRootItem,
+	createReferenceItem,
+} from './tree_item';
 
 export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
 
@@ -13,6 +23,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	readonly onDidChangeTreeData = this._onDidChange.event;
 	private readonly root: RootItem;
 	private readonly foldersRootNode: VisibleRootItem;
+	private savedSearches: SavedSearchData[];
 	private selectedFolder: FolderItem | undefined;
 
 	constructor(
@@ -20,9 +31,11 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		private readonly storage: PowerSearchStorage,
 		private readonly extensionUri: vscode.Uri,
 		rootState: { color?: string; isHidden: boolean; expanded: boolean; },
+		searches: SavedSearchData[],
 	) {
 		this.root = { type: 'root', children, color: rootState.color, isHidden: rootState.isHidden };
 		this.foldersRootNode = { type: 'foldersRoot', name: 'Folders', expanded: rootState.expanded, color: rootState.color, isHidden: rootState.isHidden };
+		this.savedSearches = searches.map((search) => ({ ...search }));
 		this.folderIcon = {
 			light: vscode.Uri.joinPath(this.extensionUri, 'resources', 'folder.svg'),
 			dark: vscode.Uri.joinPath(this.extensionUri, 'resources', 'folder.svg'),
@@ -61,9 +74,14 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 		const targetNode = target?.type === 'folder'
 			? target
-			: target?.type === 'foldersRoot'
+			: target?.type === 'foldersRoot' || target === undefined
 				? this.root
-				: target?.parent ?? this.root;
+				: target.type === 'ref'
+					? target.parent ?? this.root
+					: undefined;
+		if (!targetNode) {
+			return;
+		}
 		if (targetNode === nodes[0].parent) {
 			return;
 		}
@@ -113,6 +131,10 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		};
 	}
 
+	public getSavedSearches(): SavedSearchData[] {
+		return this.savedSearches.map((search) => ({ ...search }));
+	}
+
 	public hasFolders(): boolean {
 		return this.root.children.length > 0;
 	}
@@ -159,6 +181,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 
 	public clear() {
 		this.root.children = [];
+		this.savedSearches = [];
 		this.selectedFolder = undefined;
 		this.root.color = undefined;
 		this.root.isHidden = false;
@@ -320,7 +343,10 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			this.refresh();
 			return;
 		}
-		if (element.type === 'ref' || element.expanded === expanded) {
+		if (element.type === 'ref') {
+			return;
+		}
+		if (element.expanded === expanded) {
 			return;
 		}
 		element.expanded = expanded;
@@ -356,6 +382,26 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	toggleRootVisibility() {
 		this.root.isHidden = !this.root.isHidden;
 		this.foldersRootNode.isHidden = this.root.isHidden;
+		this.updateTree();
+	}
+
+	public saveSearch(search: SavedSearchData) {
+		const index = this.savedSearches.findIndex((item) => item.id === search.id);
+		if (index >= 0) {
+			this.savedSearches[index] = { ...search };
+		}
+		else {
+			this.savedSearches = [{ ...search }, ...this.savedSearches];
+		}
+		this.updateTree();
+	}
+
+	public removeSavedSearch(searchId: string) {
+		const next = this.savedSearches.filter((item) => item.id !== searchId);
+		if (next.length === this.savedSearches.length) {
+			return;
+		}
+		this.savedSearches = next;
 		this.updateTree();
 	}
 
@@ -415,4 +461,5 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		}
 		return node.children.some((child) => this.containsNode(child, searchNode));
 	}
+
 }

@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 
 export type ParentNode = FolderItem | RootItem;
+export type SearchScope = 'currentFile' | 'allWorkspaces' | 'selectedWorkspaces';
 export type TreeNode = VisibleRootItem | FolderItem | ReferenceItem;
 
 export interface RootItem {
@@ -17,6 +18,17 @@ export interface VisibleRootItem {
 	expanded: boolean;
 	color?: string;
 	isHidden: boolean;
+}
+
+export interface SavedSearchData {
+	id: string;
+	name: string;
+	pattern: string;
+	isRegex: boolean;
+	scope: SearchScope;
+	workspaceNames?: string[];
+	includes?: string;
+	excludes?: string;
 }
 
 export interface FolderData {

@@ -26,6 +26,11 @@
         {
           "id": "powersearch-explorer.folders",
           "name": "Folders"
+        },
+        {
+          "id": "powersearch-explorer.search",
+          "name": "Search",
+          "type": "webview"
         }
       ]
     },
@@ -36,7 +41,7 @@
       },
       {
         "command": "powersearch.addFolder",
-        "title": "Add a new folder",
+        "title": "New Folder",
         "icon": {
           "light": "resources/folder.svg",
           "dark": "resources/folder.svg"
@@ -91,12 +96,12 @@
       },
       {
         "command": "powersearch.toggleFolderVisibilityHide",
-        "title": "Hide Folder",
+        "title": "Folder Hide",
         "icon": "$(eye)"
       },
       {
         "command": "powersearch.toggleFolderVisibilityShow",
-        "title": "Show Folder",
+        "title": "Folder Show",
         "icon": "$(eye-closed)"
       }
     ],
@@ -104,8 +109,12 @@
       "view/item/context": [
         {
           "command": "powersearch.addFolder",
-          "when": "viewItem == foldersRoot",
+          "when": "viewItem == foldersRoot || viewItem == hiddenFoldersRoot",
           "group": "inline"
+        },
+        {
+          "command": "powersearch.chooseTargetFolder",
+          "when": "viewItem == hiddenFoldersRoot"
         },
         {
           "command": "powersearch.openFolderDoc",
@@ -118,31 +127,17 @@
           "group": "inline"
         },
         {
-          "command": "powersearch.toggleFolderVisibilityHide",
-          "when": "viewItem == foldersRoot",
-          "group": "inline"
-        },
-        {
-          "command": "powersearch.toggleFolderVisibilityShow",
-          "when": "viewItem == hiddenFoldersRoot",
-          "group": "inline"
-        },
-        {
           "command": "powersearch.clearTargetFolder",
-          "when": "(viewItem == foldersRoot || viewItem == hiddenFoldersRoot) && powersearch.hasTargetFolder"
-        },
-        {
-          "command": "powersearch.removeData",
-          "when": "viewItem == foldersRoot || viewItem == hiddenFoldersRoot"
+          "when": "(viewItem == hiddenFoldersRoot) && powersearch.hasTargetFolder"
         },
         {
           "command": "powersearch.toggleFolderVisibilityHide",
-          "when": "viewItem == visibleFolder || viewItem == targetFolder",
+          "when": "viewItem == foldersRoot || viewItem == visibleFolder || viewItem == targetFolder",
           "group": "inline"
         },
         {
           "command": "powersearch.toggleFolderVisibilityShow",
-          "when": "viewItem == hiddenFolder || viewItem == hiddenTargetFolder",
+          "when": "viewItem == hiddenFoldersRoot || viewItem == hiddenFolder || viewItem == hiddenTargetFolder",
           "group": "inline"
         },
         {

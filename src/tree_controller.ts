@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { DecorationManager } from './decorator';
 import { PowerSearchStorage } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { FolderItem, TreeNode, VisibleRootItem, createFolderItem } from './tree/tree_item';
-import { isValidColor } from './utils';
+import { FolderItem, SavedSearchData, SearchScope, TreeNode, VisibleRootItem, createFolderItem, createId } from './tree/tree_item';
+import { getPreviewChunks, isValidColor } from './utils';
 
 const defaultColors = [
 	{ name: 'Navy', value: '#001f3f' },
@@ -26,8 +26,55 @@ const defaultColors = [
 ];
 
 type ColorTarget = FolderItem | VisibleRootItem;
+export interface SearchDraft {
+	pattern: string;
+	isRegex: boolean;
+	isCaseSensitive: boolean;
+	isWholeWord: boolean;
+	scope: SearchScope;
+	workspaceNames?: string[];
+	includes?: string;
+	excludes?: string;
+}
+
+export interface SearchFormState {
+	pattern: string;
+	isRegex: boolean;
+	isCaseSensitive: boolean;
+	isWholeWord: boolean;
+	scope: SearchScope;
+	workspaceNames: string[];
+	includes: string;
+	excludes: string;
+}
+
+export interface SearchFolderOption {
+	id: string;
+	label: string;
+	description?: string;
+	isTarget: boolean;
+}
+
+export interface SearchResultItem {
+	id: string;
+	path: string;
+	line: number;
+	preview: string;
+}
+
+export interface SearchRunResult {
+	results: SearchResultItem[];
+	resultCount: number;
+	fileCount: number;
+}
+
+interface SearchResultEntry extends SearchResultItem {
+	location: vscode.Location;
+}
 
 export class TreeController {
+	private lastSearchResults: SearchResultEntry[] = [];
+
 	constructor(
 		private readonly tree: FoldersTreeDataProvider,
 		private readonly storage: PowerSearchStorage,
@@ -208,7 +255,7 @@ export class TreeController {
 		await this.decorations.updateVisibleEditors();
 	}
 
-	public async onAddFolder(parent?: FolderItem) {
+	public async onAddFolder(parent?: FolderItem | VisibleRootItem) {
 		const folder = await this.createFolder(parent);
 		if (folder) {
 			this.tree.setSelectedFolder(folder);
@@ -229,13 +276,13 @@ export class TreeController {
 		return this.tree.getSelectedFolder() ?? this.pickFolder('Choose where new ranges should be stored.', true);
 	}
 
-	private async createFolder(parent?: FolderItem, initialName?: string): Promise<FolderItem | undefined> {
+	private async createFolder(parent?: FolderItem | VisibleRootItem, initialName?: string): Promise<FolderItem | undefined> {
 		const newName = initialName ?? await vscode.window.showInputBox({ prompt: 'Enter folder name' });
 		if (!newName) {
 			return undefined;
 		}
 		const folder = createFolderItem({ name: newName, children: [], references: [] });
-		this.tree.addNode(folder, parent);
+		this.tree.addNode(folder, parent?.type === 'folder' ? parent : undefined);
 		return folder;
 	}
 
@@ -256,8 +303,8 @@ export class TreeController {
 		}));
 		if (allowCreate) {
 			items.unshift({
-				label: '$(add) Create folder',
-				description: 'Create a new root folder',
+				label: '$(add) New Folder',
+				description: 'Create a new top-level folder',
 				create: true,
 			});
 		}
@@ -290,6 +337,220 @@ export class TreeController {
 		return details.length > 0 ? details.join(' · ') : undefined;
 	}
 
+	public getSearchFolders(): SearchFolderOption[] {
+		return this.tree.listFolders().map((folder) => ({
+			id: folder.id,
+			label: folder.name,
+			description: this.describeFolder(folder),
+			isTarget: this.tree.getSelectedFolderId() === folder.id,
+		}));
+	}
+
+	public async runSearch(form: SearchFormState): Promise<SearchRunResult> {
+		const search = normalizeSearchDraft(form);
+		if (!search) {
+			this.lastSearchResults = [];
+			return emptySearchRunResult();
+		}
+		const locations = await this.findMatches(search);
+		this.lastSearchResults = await this.buildSearchResults(locations);
+		return toSearchRunResult(this.lastSearchResults);
+	}
+
+	public async saveLatestSearchResults(folderId: string): Promise<boolean> {
+		if (this.lastSearchResults.length === 0) {
+			return false;
+		}
+		const folder = this.tree.getFolder(folderId);
+		if (!folder) {
+			vscode.window.showWarningMessage('Choose a valid folder before saving search results.');
+			return false;
+		}
+		await this.addLocationsToFolder(this.lastSearchResults.map((result) => result.location), folder);
+		return true;
+	}
+
+	public dismissSearchResult(resultId: string): SearchRunResult {
+		this.lastSearchResults = this.lastSearchResults.filter((result) => result.id !== resultId);
+		return toSearchRunResult(this.lastSearchResults);
+	}
+
+	public async openSearchResult(resultId: string) {
+		const result = this.lastSearchResults.find((entry) => entry.id === resultId);
+		if (!result) {
+			return;
+		}
+		const { location } = result;
+		await vscode.commands.executeCommand('vscode.open', location.uri, <vscode.TextDocumentShowOptions>{
+			selection: location.range,
+		});
+	}
+
+	public createInitialSearchState(): SearchFormState {
+		return {
+			pattern: '',
+			isRegex: false,
+			isCaseSensitive: false,
+			isWholeWord: false,
+			scope: 'allWorkspaces',
+			workspaceNames: [],
+			includes: '',
+			excludes: '',
+		};
+	}
+
+	private async findMatches(search: SearchDraft): Promise<vscode.Location[]> {
+		const expression = this.createSearchExpression(search);
+		if (!expression) {
+			return [];
+		}
+		const locations: vscode.Location[] = [];
+		const seen = new Set<string>();
+		const pushResult = (uri: vscode.Uri, range: vscode.Range) => {
+			const identity = `${uri.toString()}:${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`;
+			if (seen.has(identity)) {
+				return;
+			}
+			seen.add(identity);
+			locations.push(new vscode.Location(uri, range));
+		};
+
+		switch (search.scope) {
+			case 'currentFile':
+				await this.findMatchesInCurrentFile(expression, pushResult);
+				break;
+			case 'selectedWorkspaces':
+				await this.findMatchesInSelectedWorkspaces(search, expression, pushResult);
+				break;
+			default:
+				await this.findMatchesInUris(
+					await vscode.workspace.findFiles(search.includes || '**/*', search.excludes || undefined),
+					expression,
+					pushResult,
+				);
+				break;
+		}
+
+		return locations;
+	}
+
+	private async buildSearchResults(locations: vscode.Location[]): Promise<SearchResultEntry[]> {
+		const results: SearchResultEntry[] = [];
+		for (const location of locations) {
+			const path = vscode.workspace.asRelativePath(location.uri, false);
+			try {
+				const document = await vscode.workspace.openTextDocument(location.uri);
+				const { before, inside, after } = getPreviewChunks(document, location.range, 24, true);
+				results.push({
+					id: createId('res'),
+					path,
+					line: location.range.start.line + 1,
+					preview: `${before}${inside}${after}`,
+					location,
+				});
+			}
+			catch {
+				results.push({
+					id: createId('res'),
+					path,
+					line: location.range.start.line + 1,
+					preview: path,
+					location,
+				});
+			}
+		}
+		return results;
+	}
+
+	private async findMatchesInCurrentFile(expression: RegExp, pushResult: (uri: vscode.Uri, range: vscode.Range) => void) {
+		const editor = vscode.window.activeTextEditor;
+		if (!editor) {
+			vscode.window.showWarningMessage('Open a file before searching the current file.');
+			return;
+		}
+		for (const range of this.findRangesInDocument(editor.document, expression)) {
+			pushResult(editor.document.uri, range);
+		}
+	}
+
+	private async findMatchesInSelectedWorkspaces(
+		search: SearchDraft,
+		expression: RegExp,
+		pushResult: (uri: vscode.Uri, range: vscode.Range) => void,
+	) {
+		for (const workspaceName of search.workspaceNames ?? []) {
+			const workspaceFolder = vscode.workspace.workspaceFolders?.find((folder) => folder.name === workspaceName);
+			if (!workspaceFolder) {
+				continue;
+			}
+			const uris = await vscode.workspace.findFiles(
+				search.includes
+					? new vscode.RelativePattern(workspaceFolder, search.includes)
+					: new vscode.RelativePattern(workspaceFolder, '**/*'),
+				search.excludes
+					? new vscode.RelativePattern(workspaceFolder, search.excludes)
+					: undefined,
+			);
+			await this.findMatchesInUris(uris, expression, pushResult);
+		}
+	}
+
+	private async findMatchesInUris(
+		uris: readonly vscode.Uri[],
+		expression: RegExp,
+		pushResult: (uri: vscode.Uri, range: vscode.Range) => void,
+	) {
+		for (const uri of uris) {
+			try {
+				const document = await vscode.workspace.openTextDocument(uri);
+				for (const range of this.findRangesInDocument(document, expression)) {
+					pushResult(uri, range);
+				}
+			}
+			catch {
+				// Ignore unreadable files and continue with the rest of the search set.
+			}
+		}
+	}
+
+	private createSearchExpression(search: SearchDraft): RegExp | undefined {
+		const sourcePattern = search.isRegex
+			? search.pattern
+			: escapeRegExp(search.pattern);
+		const pattern = search.isWholeWord
+			? `\\b(?:${sourcePattern})\\b`
+			: sourcePattern;
+		try {
+			const flags = search.isCaseSensitive ? 'g' : 'gi';
+			return new RegExp(pattern, flags);
+		}
+		catch (error) {
+			vscode.window.showWarningMessage(`Invalid regular expression: ${error instanceof Error ? error.message : String(error)}`);
+			return undefined;
+		}
+	}
+
+	private findRangesInDocument(document: vscode.TextDocument, expression: RegExp): vscode.Range[] {
+		const text = document.getText();
+		if (!text) {
+			return [];
+		}
+		expression.lastIndex = 0;
+		const ranges: vscode.Range[] = [];
+		let match: RegExpExecArray | null;
+		while ((match = expression.exec(text)) !== null) {
+			const value = match[0];
+			if (!value) {
+				expression.lastIndex += 1;
+				continue;
+			}
+			const start = document.positionAt(match.index);
+			const end = document.positionAt(match.index + value.length);
+			ranges.push(new vscode.Range(start, end));
+		}
+		return ranges;
+	}
+
 	private async addLocationsToFolder(locations: vscode.Location[], folder: FolderItem): Promise<void> {
 		const result = await this.storage.addRanges(locations, folder.id);
 		if (result.added > 0) {
@@ -300,4 +561,44 @@ export class TreeController {
 			vscode.window.showWarningMessage(`Skipped ${result.skippedOutsideWorkspace} reference(s) outside the current workspace.`);
 		}
 	}
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeSearchDraft(form: SearchFormState): SearchDraft | undefined {
+	const pattern = form.pattern.trim();
+	if (!pattern) {
+		return undefined;
+	}
+	const workspaceNames = form.scope === 'selectedWorkspaces'
+		? form.workspaceNames.filter((name) => name.trim().length > 0)
+		: undefined;
+	return {
+		pattern,
+		isRegex: form.isRegex,
+		isCaseSensitive: form.isCaseSensitive,
+		isWholeWord: form.isWholeWord,
+		scope: form.scope,
+		workspaceNames,
+		includes: form.scope === 'currentFile' ? undefined : form.includes.trim() || undefined,
+		excludes: form.scope === 'currentFile' ? undefined : form.excludes.trim() || undefined,
+	};
+}
+
+function toSearchRunResult(results: SearchResultEntry[]): SearchRunResult {
+	return {
+		results: results.map(({ location: _location, ...result }) => result),
+		resultCount: results.length,
+		fileCount: new Set(results.map((result) => result.location.uri.toString())).size,
+	};
+}
+
+function emptySearchRunResult(): SearchRunResult {
+	return {
+		results: [],
+		resultCount: 0,
+		fileCount: 0,
+	};
 }
