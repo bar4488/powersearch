@@ -39,7 +39,6 @@ interface UiFile {
 	rootColor?: string;
 	rootIsHidden?: boolean;
 	rootExpanded?: boolean;
-	searchRootExpanded?: boolean;
 }
 
 interface SearchesFile {
@@ -95,7 +94,6 @@ export interface LoadedPowerSearchState {
 	rootIsHidden: boolean;
 	rootExpanded: boolean;
 	searches: SavedSearchData[];
-	searchRootExpanded: boolean;
 }
 
 export interface PowerSearchSettings {
@@ -219,7 +217,6 @@ export class PowerSearchStorage {
 				selectedFolderId: null,
 				rootIsHidden: false,
 				rootExpanded: true,
-				searchRootExpanded: true,
 			});
 			const searches = await this.readJson<SearchesFile>(this.searchesUri(), { schemaVersion: SCHEMA_VERSION, searches: [] });
 			if (folders.schemaVersion !== SCHEMA_VERSION || !Array.isArray(folders.folders)) {
@@ -241,7 +238,6 @@ export class PowerSearchStorage {
 				rootIsHidden: ui.rootIsHidden ?? false,
 				rootExpanded: ui.rootExpanded ?? true,
 				searches: searches.searches,
-				searchRootExpanded: ui.searchRootExpanded ?? true,
 			};
 		}
 		catch (error) {
@@ -252,7 +248,6 @@ export class PowerSearchStorage {
 				rootIsHidden: false,
 				rootExpanded: true,
 				searches: [],
-				searchRootExpanded: true,
 			};
 		}
 	}

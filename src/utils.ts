@@ -1,9 +1,5 @@
 import * as vscode from 'vscode';
-import { FolderItem, PositionData, RootItem } from './tree/tree_item';
-
-export function positionFrom(positionData: PositionData) {
-    return new vscode.Position(positionData.line, positionData.character);
-}
+import { FolderItem, RootItem } from './tree/tree_item';
 
 export function nodeToIndices(node: FolderItem): number[] | undefined {
     let indices = [];
@@ -22,7 +18,7 @@ export function nodeToIndices(node: FolderItem): number[] | undefined {
 export function indicesToNode(indices: number[], root: RootItem): FolderItem | undefined {
     let curr: FolderItem | undefined;
     let children = root.children;
-    for (var idx of indices) {
+    for (const idx of indices) {
         curr = children[idx];
         if (!curr) {
             return undefined;
@@ -46,7 +42,7 @@ export function createDecorationFromColor(color: string | undefined): vscode.Tex
 }
 
 export function isValidColor(color: string | undefined): boolean {
-    return typeof color === 'string' && /^(?:#|0x)(?:[a-fA-F0-9]{6})$/.test(color);
+    return typeof color === 'string' && /^#[a-fA-F0-9]{6}$/.test(color);
 }
 
 export function getPreviewChunks(doc: vscode.TextDocument, range: vscode.Range, beforeLen: number = 8, trim: boolean = true) {
@@ -81,7 +77,7 @@ export function resolveFolderColor(folder: FolderItem): string | undefined {
 
     let current: FolderItem | RootItem | undefined = folder.parent ?? { type: 'root', children: [], isHidden: false };
     while (current.type !== 'root') {
-        if (!current.inheritsColor && current.color) {
+        if (!current.inheritsColor) {
             return current.color;
         }
         current = current.parent;

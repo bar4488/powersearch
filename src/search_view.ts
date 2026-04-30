@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import { SearchFormState, SearchRunResult, TreeController } from './tree_controller';
 
 interface SearchViewState {
@@ -564,10 +565,5 @@ function normalizeFormState(form: any, fallback: SearchFormState): SearchFormSta
 }
 
 function getNonce() {
-	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-	let result = '';
-	for (let index = 0; index < 32; index += 1) {
-		result += chars.charAt(Math.floor(Math.random() * chars.length));
-	}
-	return result;
+	return crypto.randomBytes(16).toString('hex');
 }

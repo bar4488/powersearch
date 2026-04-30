@@ -62,7 +62,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	}
 
 	dropMimeTypes = [TREE_MIME, FOLDER_MIME, REFERENCE_MIME];
-	dragMimeTypes = [];
+	dragMimeTypes = []; // We set drag data manually in handleDrag, so we don't use the default dragMimeTypes mechanism
 
 	public async handleDrop(target: TreeNode | undefined, sources: vscode.DataTransfer): Promise<void> {
 		const referenceTransfer = sources.get(REFERENCE_MIME);
@@ -493,7 +493,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		this.updateTree();
 	}
 
-	public updateNode(folder: FolderItem) {
+	public updateNode() {
 		this.updateTree();
 	}
 
@@ -507,7 +507,7 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 				return;
 			}
 			this.foldersRootNode.expanded = expanded;
-			this.refresh();
+			this.updateTree();
 			return;
 		}
 		if (element.type === 'ref') {

@@ -206,11 +206,15 @@ export class TreeController {
 		const idx = defaultColors.map((option) => option.name).indexOf(choice);
 		let color: string;
 		if (idx === -1) {
-			color = await vscode.window.showInputBox({ prompt: 'Write a color in #xxxxxx format' });
-			if (!isValidColor(color)) {
+			const input = await vscode.window.showInputBox({ prompt: 'Write a color in #xxxxxx format' });
+			if (input === undefined) {
+				return;
+			}
+			if (!isValidColor(input)) {
 				vscode.window.showWarningMessage('Invalid color format.');
 				return;
 			}
+			color = input;
 		}
 		else {
 			color = defaultColors[idx].value;
@@ -232,7 +236,7 @@ export class TreeController {
 		}
 
 		folder.name = newName;
-		this.tree.updateNode(folder);
+		this.tree.updateNode();
 	}
 
 	public async onDuplicateFolder(folder: FolderItem) {
@@ -630,7 +634,7 @@ export class TreeController {
 		return results;
 	}
 
-	private async findMatchesInCurrentFile(expression: RegExp, pushResult: (uri: vscode.Uri, range: vscode.Range) => void) {
+	private findMatchesInCurrentFile(expression: RegExp, pushResult: (uri: vscode.Uri, range: vscode.Range) => void) {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
 			vscode.window.showWarningMessage('Open a file before searching the current file.');
