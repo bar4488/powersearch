@@ -589,6 +589,9 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 	}
 
 	private async syncContexts() {
+		if (this.selectedFolder && !this.findFolder(this.selectedFolder.id)) {
+			this.selectedFolder = undefined;
+		}
 		await vscode.commands.executeCommand('setContext', 'powersearch.hasFolders', this.hasFolders());
 		await vscode.commands.executeCommand('setContext', 'powersearch.hasTargetFolder', !!this.selectedFolder);
 	}

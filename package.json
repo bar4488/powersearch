@@ -158,8 +158,9 @@
           "group": "inline"
         },
         {
-          "command": "powersearch.chooseTargetFolder",
-          "when": "viewItem == foldersRoot || viewItem == hiddenFoldersRoot"
+          "command": "powersearch.addFolder",
+          "when": "viewItem == foldersRoot || viewItem == hiddenFoldersRoot",
+          "group": "1_rootActions@1"
         },
         {
           "command": "powersearch.openFolderDoc",
@@ -170,10 +171,6 @@
           "command": "powersearch.chooseFolderColor",
           "when": "viewItem == foldersRoot || viewItem == hiddenFoldersRoot",
           "group": "inline"
-        },
-        {
-          "command": "powersearch.clearTargetFolder",
-          "when": "(viewItem == foldersRoot || viewItem == hiddenFoldersRoot) && powersearch.hasTargetFolder"
         },
         {
           "command": "powersearch.toggleFolderVisibilityHide",

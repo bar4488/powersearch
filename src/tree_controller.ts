@@ -25,6 +25,8 @@ const defaultColors = [
 	{ name: 'White', value: '#FFFFFF' },
 ];
 
+const defaultNewFolderColor = '#0074D9';
+
 type ColorTarget = FolderItem | VisibleRootItem;
 export interface SearchDraft {
 	pattern: string;
@@ -102,15 +104,17 @@ export class TreeController {
 			return;
 		}
 
-		const folder = createFolderItem({
+		const folder = this.tree.getSelectedFolder() ?? createFolderItem({
 			name: doc.getText(baseRange),
 			color: '#ffff00',
 			expanded: true,
 			children: [],
 			references: [],
 		});
-		this.tree.addNode(folder);
-		this.tree.setSelectedFolder(folder);
+		if (!this.tree.getSelectedFolder()) {
+			this.tree.addNode(folder);
+			this.tree.setSelectedFolder(folder);
+		}
 		await this.addLocationsToFolder(refs, folder);
 	}
 
@@ -413,8 +417,17 @@ export class TreeController {
 		if (!newName) {
 			return undefined;
 		}
-		const folder = createFolderItem({ name: newName, children: [], references: [] });
+		const hadFolders = this.tree.hasFolders();
+		const folder = createFolderItem({
+			name: newName,
+			color: defaultNewFolderColor,
+			children: [],
+			references: [],
+		});
 		this.tree.addNode(folder, parent?.type === 'folder' ? parent : undefined);
+		if (!hadFolders) {
+			this.tree.setSelectedFolder(folder);
+		}
 		return folder;
 	}
 
