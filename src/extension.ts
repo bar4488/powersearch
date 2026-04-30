@@ -7,6 +7,20 @@ import { FolderItem, ReferenceItem, TreeNode, VisibleRootItem } from './tree/tre
 import { TreeController } from './tree_controller';
 
 export async function activate(context: vscode.ExtensionContext) {
+	context.subscriptions.push(vscode.commands.registerCommand('powersearch.setStorageLocation', async () => {
+		const changed = await PowerSearchStorage.configureStorageLocation(context);
+		if (!changed) {
+			return;
+		}
+		const choice = await vscode.window.showInformationMessage(
+			'PowerSearch storage location updated. Reload window to apply the new location.',
+			'Reload Window',
+		);
+		if (choice === 'Reload Window') {
+			await vscode.commands.executeCommand('workbench.action.reloadWindow');
+		}
+	}));
+
 	const storage = await PowerSearchStorage.open(context);
 	if (!storage) {
 		return;

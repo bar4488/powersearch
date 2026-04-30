@@ -13,6 +13,7 @@ const FOLDER_RANGES_DIRECTORY = 'indexes/folders';
 const DOCS_DIRECTORY = 'docs';
 const LEGACY_STATE_FILE = 'state.json';
 const LEGACY_WORKSPACE_STATE_KEY = 'treeData';
+const STORAGE_LOCATION_STATE_KEY = 'storageLocationUri';
 const SCHEMA_VERSION = 2;
 const DEFAULT_FOLDER_COLOR = '#0074D9';
 
@@ -152,9 +153,26 @@ export class PowerSearchStorage {
 
 	private constructor(
 		private readonly context: vscode.ExtensionContext,
-		private readonly storageFolder: vscode.WorkspaceFolder,
+		private readonly storageLocation: vscode.Uri,
+		private readonly storageLocationLabel: string,
 		private readonly workspaces: WorkspaceDescriptor[],
 	) { }
+
+	static async configureStorageLocation(context: vscode.ExtensionContext): Promise<boolean> {
+		const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+		if (workspaceFolders.length === 0) {
+			void vscode.window.showWarningMessage('PowerSearch requires an open workspace folder to persist data.');
+			return false;
+		}
+
+		const location = await pickStorageLocation(workspaceFolders, 'Choose where PowerSearch should store .powersearch');
+		if (!location) {
+			return false;
+		}
+
+		await context.workspaceState.update(STORAGE_LOCATION_STATE_KEY, location.toString());
+		return true;
+	}
 
 	static async open(context: vscode.ExtensionContext): Promise<PowerSearchStorage | undefined> {
 		const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
@@ -169,13 +187,25 @@ export class PowerSearchStorage {
 			return undefined;
 		}
 
-		const storageFolder = await chooseStorageFolder(workspaceFolders);
-		if (!storageFolder) {
-			void vscode.window.showWarningMessage('PowerSearch storage was not configured. Choose a workspace folder to enable persistence.');
+		const configuredLocation = context.workspaceState.get<string>(STORAGE_LOCATION_STATE_KEY);
+		if (configuredLocation) {
+			const configuredUri = vscode.Uri.parse(configuredLocation);
+			const storage = new PowerSearchStorage(context, configuredUri, configuredUri.fsPath, workspaceFolders.map((folder) => ({
+				id: folder.name,
+				name: folder.name,
+			})));
+			await storage.initialize();
+			return storage;
+		}
+
+		const storageLocation = await chooseStorageLocation(context, workspaceFolders);
+		if (!storageLocation) {
+			void vscode.window.showWarningMessage('PowerSearch storage was not configured. Choose a folder where .powersearch should be stored.');
 			return undefined;
 		}
 
-		const storage = new PowerSearchStorage(context, storageFolder, workspaceFolders.map((folder) => ({
+		await context.workspaceState.update(STORAGE_LOCATION_STATE_KEY, storageLocation.toString());
+		const storage = new PowerSearchStorage(context, storageLocation, storageLocation.fsPath, workspaceFolders.map((folder) => ({
 			id: folder.name,
 			name: folder.name,
 		})));
@@ -1140,7 +1170,7 @@ export class PowerSearchStorage {
 			schemaVersion: SCHEMA_VERSION,
 			createdAt,
 			updatedAt: new Date().toISOString(),
-			storageWorkspace: this.storageFolder.name,
+			storageWorkspace: this.storageLocationLabel,
 			workspaces: this.workspaces,
 		});
 	}
@@ -1213,7 +1243,7 @@ export class PowerSearchStorage {
 	}
 
 	private storageRootUri(): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageFolder.uri, STORAGE_DIRECTORY);
+		return vscode.Uri.joinPath(this.storageLocation, STORAGE_DIRECTORY);
 	}
 
 	private manifestUri(): vscode.Uri {
@@ -1300,32 +1330,59 @@ function deserializeFolder(data: FolderData, parent?: FolderItem): FolderItem {
 	return folder;
 }
 
-async function chooseStorageFolder(workspaceFolders: readonly vscode.WorkspaceFolder[]): Promise<vscode.WorkspaceFolder | undefined> {
-	const existing: vscode.WorkspaceFolder[] = [];
+async function chooseStorageLocation(
+	context: vscode.ExtensionContext,
+	workspaceFolders: readonly vscode.WorkspaceFolder[],
+): Promise<vscode.Uri | undefined> {
+	const existingLocations: vscode.Uri[] = [];
 	for (const folder of workspaceFolders) {
 		if (await exists(vscode.Uri.joinPath(folder.uri, STORAGE_DIRECTORY, MANIFEST_FILE)) || await exists(vscode.Uri.joinPath(folder.uri, STORAGE_DIRECTORY, FOLDERS_FILE))) {
-			existing.push(folder);
+			existingLocations.push(folder.uri);
 		}
 	}
-	if (existing.length === 1) {
-		return existing[0];
+
+	if (existingLocations.length === 1) {
+		return existingLocations[0];
 	}
 
-	if (workspaceFolders.length === 1 && existing.length === 0) {
-		return workspaceFolders[0];
+	if (workspaceFolders.length === 1 && existingLocations.length === 0) {
+		return workspaceFolders[0].uri;
 	}
 
-	const candidates = existing.length > 0 ? existing : [...workspaceFolders];
-	const picked = await vscode.window.showQuickPick(candidates.map((folder) => ({
-		label: folder.name,
-		description: existing.length > 0 ? 'Existing PowerSearch data' : 'Create .powersearch here',
-		folder,
-	})), {
-		placeHolder: existing.length > 0
-			? 'Multiple PowerSearch folders were found. Choose which one to use.'
-			: 'Choose where PowerSearch should create .powersearch for this multi-root workspace.',
+	if (existingLocations.length > 1) {
+		const pickedExisting = await vscode.window.showQuickPick(existingLocations.map((uri) => ({
+			label: vscode.workspace.asRelativePath(uri, false),
+			description: uri.fsPath,
+			uri,
+		})), {
+			placeHolder: 'Multiple PowerSearch folders were found. Choose one or cancel to pick a different location.',
+		});
+		if (pickedExisting) {
+			return pickedExisting.uri;
+		}
+	}
+
+	const initialValue = context.workspaceState.get<string>(STORAGE_LOCATION_STATE_KEY);
+	const initialUri = initialValue
+		? vscode.Uri.parse(initialValue)
+		: workspaceFolders[0]?.uri;
+	return pickStorageLocation(workspaceFolders, 'Choose where PowerSearch should store .powersearch', initialUri);
+}
+
+async function pickStorageLocation(
+	workspaceFolders: readonly vscode.WorkspaceFolder[],
+	title: string,
+	defaultUri?: vscode.Uri,
+): Promise<vscode.Uri | undefined> {
+	const selected = await vscode.window.showOpenDialog({
+		canSelectFiles: false,
+		canSelectFolders: true,
+		canSelectMany: false,
+		title,
+		openLabel: 'Use This Folder',
+		defaultUri: defaultUri ?? workspaceFolders[0]?.uri,
 	});
-	return picked?.folder;
+	return selected?.[0];
 }
 
 function findDuplicateNames(workspaceFolders: readonly vscode.WorkspaceFolder[]): string[] {

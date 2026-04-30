@@ -27,7 +27,7 @@ No current-format file stores absolute workspace paths or absolute source-file p
         <file-hash>.json
 ```
 
-In a single-folder workspace, PowerSearch creates `.powersearch` in that folder. In a multi-root workspace, PowerSearch prompts the user to choose which workspace folder owns `.powersearch`. If exactly one workspace folder already contains PowerSearch data, that folder is used automatically.
+In a single-folder workspace, PowerSearch creates `.powersearch` in that folder by default. In a multi-root workspace, PowerSearch prompts for a folder path where `.powersearch` should be stored. If exactly one workspace folder already contains PowerSearch data, that location is used automatically.
 
 Workspace folder names must be unique. This keeps source references portable without storing absolute paths.
 

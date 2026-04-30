@@ -76,6 +76,10 @@
         "title": "Powersearch: Remove Data"
       },
       {
+        "command": "powersearch.setStorageLocation",
+        "title": "PowerSearch: Set Storage Location"
+      },
+      {
         "command": "powersearch.saveTree",
         "title": "Powersearch: Save"
       },
