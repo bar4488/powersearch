@@ -451,13 +451,18 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		let result: vscode.TreeItem;
 		const description = vscode.workspace.asRelativePath(resolved.location.uri, false);
 		try {
-			const doc = await vscode.workspace.openTextDocument(resolved.location.uri);
-			const { before, inside, after } = getPreviewChunks(doc, resolved.location.range);
-			const label: vscode.TreeItemLabel = {
-				label: before + inside + after,
-				highlights: [[before.length, before.length + inside.length]],
-			};
-			result = new vscode.TreeItem(label);
+			if (resolved.storedRange.comment) {
+				result = new vscode.TreeItem(resolved.storedRange.comment);
+			}
+			else {
+				const doc = await vscode.workspace.openTextDocument(resolved.location.uri);
+				const { before, inside, after } = getPreviewChunks(doc, resolved.location.range);
+				const label: vscode.TreeItemLabel = {
+					label: before + inside + after,
+					highlights: [[before.length, before.length + inside.length]],
+				};
+				result = new vscode.TreeItem(label);
+			}
 		}
 		catch {
 			result = new vscode.TreeItem(`Missing reference: ${description}`);
