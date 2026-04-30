@@ -25,8 +25,6 @@ const defaultColors = [
 	{ name: 'White', value: '#FFFFFF' },
 ];
 
-const defaultNewFolderColor = '#0074D9';
-
 type ColorTarget = FolderItem | VisibleRootItem;
 export interface SearchDraft {
 	pattern: string;
@@ -76,6 +74,7 @@ interface SearchResultEntry extends SearchResultItem {
 
 export class TreeController {
 	private lastSearchResults: SearchResultEntry[] = [];
+	private defaultFolderColor?: string;
 
 	constructor(
 		private readonly tree: FoldersTreeDataProvider,
@@ -106,7 +105,7 @@ export class TreeController {
 
 		const folder = this.tree.getSelectedFolder() ?? createFolderItem({
 			name: doc.getText(baseRange),
-			color: '#ffff00',
+			color: await this.getDefaultFolderColor(),
 			expanded: true,
 			children: [],
 			references: [],
@@ -420,7 +419,7 @@ export class TreeController {
 		const hadFolders = this.tree.hasFolders();
 		const folder = createFolderItem({
 			name: newName,
-			color: defaultNewFolderColor,
+			color: await this.getDefaultFolderColor(),
 			children: [],
 			references: [],
 		});
@@ -429,6 +428,15 @@ export class TreeController {
 			this.tree.setSelectedFolder(folder);
 		}
 		return folder;
+	}
+
+	private async getDefaultFolderColor(): Promise<string> {
+		if (this.defaultFolderColor) {
+			return this.defaultFolderColor;
+		}
+		const settings = await this.storage.getSettings();
+		this.defaultFolderColor = settings.defaultFolderColor;
+		return this.defaultFolderColor;
 	}
 
 	private async pickFolder(placeHolder: string, allowCreate: boolean): Promise<FolderItem | undefined> {

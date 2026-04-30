@@ -7,12 +7,14 @@ const MANIFEST_FILE = 'manifest.json';
 const FOLDERS_FILE = 'folders.json';
 const SEARCHES_FILE = 'searches.json';
 const UI_FILE = 'ui.json';
+const SETTINGS_FILE = 'settings.json';
 const FILES_INDEX = 'indexes/files.json';
 const FOLDER_RANGES_DIRECTORY = 'indexes/folders';
 const DOCS_DIRECTORY = 'docs';
 const LEGACY_STATE_FILE = 'state.json';
 const LEGACY_WORKSPACE_STATE_KEY = 'treeData';
 const SCHEMA_VERSION = 2;
+const DEFAULT_FOLDER_COLOR = '#0074D9';
 
 interface WorkspaceDescriptor {
 	id: string;
@@ -44,6 +46,11 @@ interface UiFile {
 interface SearchesFile {
 	schemaVersion: typeof SCHEMA_VERSION;
 	searches: SavedSearchData[];
+}
+
+interface SettingsFile {
+	schemaVersion: typeof SCHEMA_VERSION;
+	defaultFolderColor: string;
 }
 
 interface FileIndex {
@@ -90,6 +97,10 @@ export interface LoadedPowerSearchState {
 	rootExpanded: boolean;
 	searches: SavedSearchData[];
 	searchRootExpanded: boolean;
+}
+
+export interface PowerSearchSettings {
+	defaultFolderColor: string;
 }
 
 export interface AddRangesResult {
@@ -252,6 +263,13 @@ export class PowerSearchStorage {
 			searches,
 		});
 		await this.touchManifest();
+	}
+
+	async getSettings(): Promise<PowerSearchSettings> {
+		const settings = await this.loadSettings();
+		return {
+			defaultFolderColor: settings.defaultFolderColor,
+		};
 	}
 
 	async ensureFolderDoc(folder: FolderItem): Promise<vscode.Uri> {
@@ -811,6 +829,7 @@ export class PowerSearchStorage {
 		await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.storageRootUri(), 'indexes'));
 		await vscode.workspace.fs.createDirectory(this.folderRangesDirectoryUri());
 		await vscode.workspace.fs.createDirectory(this.folderDocsDirectoryUri());
+		await this.ensureSettings();
 		const manifest = await this.readJson<ManifestFile | undefined>(this.manifestUri(), undefined);
 		if (!manifest) {
 			await this.writeManifest(new Date().toISOString());
@@ -1126,6 +1145,39 @@ export class PowerSearchStorage {
 		});
 	}
 
+	private async ensureSettings(): Promise<void> {
+		const fallback: SettingsFile = {
+			schemaVersion: SCHEMA_VERSION,
+			defaultFolderColor: DEFAULT_FOLDER_COLOR,
+		};
+		if (!await exists(this.settingsUri())) {
+			await this.writeSettings(fallback);
+			return;
+		}
+		const settings = await this.readJson<SettingsFile>(this.settingsUri(), fallback);
+		if (settings.schemaVersion !== SCHEMA_VERSION || !isValidHexColor(settings.defaultFolderColor)) {
+			await this.writeSettings(fallback);
+		}
+	}
+
+	private async loadSettings(): Promise<SettingsFile> {
+		const settings = await this.readJson<SettingsFile>(this.settingsUri(), {
+			schemaVersion: SCHEMA_VERSION,
+			defaultFolderColor: DEFAULT_FOLDER_COLOR,
+		});
+		if (settings.schemaVersion !== SCHEMA_VERSION || !isValidHexColor(settings.defaultFolderColor)) {
+			return {
+				schemaVersion: SCHEMA_VERSION,
+				defaultFolderColor: DEFAULT_FOLDER_COLOR,
+			};
+		}
+		return settings;
+	}
+
+	private async writeSettings(settings: SettingsFile): Promise<void> {
+		await this.writeJson(this.settingsUri(), settings);
+	}
+
 	private async readJson<T>(uri: vscode.Uri, fallback: T): Promise<T> {
 		try {
 			const bytes = await vscode.workspace.fs.readFile(uri);
@@ -1178,6 +1230,10 @@ export class PowerSearchStorage {
 
 	private uiUri(): vscode.Uri {
 		return vscode.Uri.joinPath(this.storageRootUri(), UI_FILE);
+	}
+
+	private settingsUri(): vscode.Uri {
+		return vscode.Uri.joinPath(this.storageRootUri(), SETTINGS_FILE);
 	}
 
 	private indexUri(): vscode.Uri {
@@ -1459,4 +1515,8 @@ function legacyLocationToVscode(location: any): vscode.Location | undefined {
 
 function isFileNotFoundError(error: unknown): boolean {
 	return error instanceof vscode.FileSystemError && error.code === 'FileNotFound';
+}
+
+function isValidHexColor(value: string): boolean {
+	return /^#[0-9A-Fa-f]{6}$/.test(value);
 }

@@ -12,6 +12,7 @@ No current-format file stores absolute workspace paths or absolute source-file p
   folders.json
   searches.json
   ui.json
+  settings.json
   docs/
     root.md
     <folder-id>.md
@@ -150,6 +151,19 @@ Stores persistent UI state, including the current target folder for new ranges a
 
 Older files may still contain `searchRootExpanded`; the current search UI does not depend on it.
 
+## `settings.json`
+
+Stores user-facing defaults for new PowerSearch data.
+
+```json
+{
+  "schemaVersion": 2,
+  "defaultFolderColor": "#0074D9"
+}
+```
+
+`defaultFolderColor` is used when creating new folders (including symbol-created folders when no target folder is selected).
+
 ## `indexes/files.json`
 
 Indexes range shards without loading every shard at startup.
@@ -212,7 +226,7 @@ Files outside the open workspace cannot be represented in the current format and
 
 ## Performance Model
 
-- Startup reads `manifest.json`, `folders.json`, `searches.json`, `ui.json`, and `indexes/files.json`.
+- Startup reads `manifest.json`, `folders.json`, `searches.json`, `ui.json`, `settings.json`, and `indexes/files.json`.
 - Tree rendering reads the lightweight per-folder indexes to reconstruct reference rows without loading every file shard up front.
 - Folder notes are lazy-loaded only when the user opens a folder's Markdown file.
 - The synthetic root's UI state is read from `ui.json`; its color acts as the fallback parent color for inherited folders, and its hidden state suppresses all descendant decorations.
