@@ -276,15 +276,6 @@ export class TreeController {
 			return;
 		}
 
-		const choice = await vscode.window.showWarningMessage(
-			'Delete this range from PowerSearch?',
-			{ modal: true },
-			'Delete Range',
-		);
-		if (choice !== 'Delete Range') {
-			return;
-		}
-
 		const result = await this.storage.deleteRange(sourceFolder.id, reference);
 		this.tree.removeReference(reference);
 		if (result.removed) {
@@ -292,13 +283,23 @@ export class TreeController {
 		}
 	}
 
-	public async onEditRangeComment(reference?: ReferenceItem) {
-		const target = reference
-			? await this.resolveCommentTargetFromReference(reference)
-			: await this.resolveCommentTargetAtCursor();
+	public async onEditRangeComment(reference: ReferenceItem) {
+		const target = await this.resolveCommentTargetFromReference(reference);
 		if (!target) {
 			return;
 		}
+		await this.applyRangeCommentEdit(target);
+	}
+
+	public async onEditRangeCommentAtCursor() {
+		const target = await this.resolveCommentTargetAtCursor();
+		if (!target) {
+			return;
+		}
+		await this.applyRangeCommentEdit(target);
+	}
+
+	private async applyRangeCommentEdit(target: StoredDocumentRange) {
 
 		const value = await vscode.window.showInputBox({
 			prompt: 'Edit range comment',

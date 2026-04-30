@@ -103,7 +103,8 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('powersearch.removeFolderColorRecursive', async (folder: FolderItem) => controller.onRemoveFolderColor(folder, true)),
 		vscode.commands.registerCommand('powersearch.clearFolderRangeComments', async (folder: FolderItem) => controller.onClearRangeComments(folder, false)),
 		vscode.commands.registerCommand('powersearch.clearFolderRangeCommentsRecursive', async (folder: FolderItem) => controller.onClearRangeComments(folder, true)),
-		vscode.commands.registerCommand('powersearch.editRangeComment', async (reference?: ReferenceItem) => controller.onEditRangeComment(reference)),
+		vscode.commands.registerCommand('powersearch.editRangeComment', async (reference: ReferenceItem) => controller.onEditRangeComment(reference)),
+		vscode.commands.registerCommand('powersearch.editRangeCommentAtCursor', async () => controller.onEditRangeCommentAtCursor()),
 		vscode.commands.registerCommand('powersearch.revealCurrentRange', async () => controller.onRevealCurrentRange((reference) => foldersTreeView.reveal(reference, {
 			expand: true,
 			focus: true,

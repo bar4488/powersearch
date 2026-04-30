@@ -53,11 +53,11 @@
       },
       {
         "command": "powersearch.chooseTargetFolder",
-        "title": "PowerSearch: Choose Target Folder"
+        "title": "Set Target Folder"
       },
       {
         "command": "powersearch.clearTargetFolder",
-        "title": "PowerSearch: Clear Target Folder"
+        "title": "Clear Target Folder"
       },
       {
         "command": "powersearch.colorLine",
@@ -121,7 +121,15 @@
       },
       {
         "command": "powersearch.editRangeComment",
-        "title": "PowerSearch: Edit Range Comment",
+        "title": "Edit Comment",
+        "icon": {
+          "light": "resources/note.svg",
+          "dark": "resources/note.svg"
+        }
+      },
+      {
+        "command": "powersearch.editRangeCommentAtCursor",
+        "title": "PowerSearch: Edit Range Comment at Cursor",
         "icon": {
           "light": "resources/note.svg",
           "dark": "resources/note.svg"
@@ -189,52 +197,63 @@
         },
         {
           "command": "powersearch.renameFolder",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "1_folderActions@2"
         },
         {
           "command": "powersearch.duplicateFolder",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
-        },
-        {
-          "command": "powersearch.removeFolder",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "1_folderActions@4"
         },
         {
           "command": "powersearch.addFolder",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "1_folderActions@1"
+        },
+        {
+          "command": "powersearch.removeFolder",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "1_folderActions@3"
         },
         {
           "command": "powersearch.chooseTargetFolder",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder",
+          "group": "1_folderActions@5"
         },
         {
           "command": "powersearch.clearTargetFolder",
-          "when": "viewItem == targetFolder || viewItem == hiddenTargetFolder"
+          "when": "viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "1_folderActions@5"
         },
         {
           "command": "powersearch.removeFolderColor",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "2_bulkActions@1"
         },
         {
           "command": "powersearch.removeFolderColorRecursive",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "2_bulkActions@2"
         },
         {
           "command": "powersearch.clearFolderRangeComments",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "2_bulkActions@3"
         },
         {
           "command": "powersearch.clearFolderRangeCommentsRecursive",
-          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder",
+          "group": "2_bulkActions@4"
         },
         {
           "command": "powersearch.editRangeComment",
-          "when": "viewItem == reference"
+          "when": "viewItem == reference",
+          "group": "1_rangeActions@1"
         },
         {
           "command": "powersearch.deleteRange",
           "when": "viewItem == reference",
-          "group": "inline"
+          "group": "1_rangeActions@2"
         }
       ],
       "view/title": [
