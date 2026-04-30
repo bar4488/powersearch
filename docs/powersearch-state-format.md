@@ -149,8 +149,6 @@ Stores persistent UI state, including the current target folder for new ranges a
 
 `selectedFolderId` may be `null`.
 
-Older files may still contain `searchRootExpanded`; the current search UI does not depend on it.
-
 ## `settings.json`
 
 Stores user-facing defaults for new PowerSearch data.
@@ -244,6 +242,4 @@ Files outside the open workspace cannot be represented in the current format and
 ## Compatibility Rules
 
 - Unsupported `schemaVersion` values should fail closed with a warning.
-- Unknown optional fields should be preserved by migrations when practical.
 - Folder indexes must not keep dangling references to missing shard files or missing range ids.
-- Legacy absolute-URI state is migrated only when the referenced files are inside the open workspace. The migrated current-format files contain workspace-folder names and relative paths only.

@@ -11,8 +11,6 @@ const SETTINGS_FILE = 'settings.json';
 const FILES_INDEX = 'indexes/files.json';
 const FOLDER_RANGES_DIRECTORY = 'indexes/folders';
 const DOCS_DIRECTORY = 'docs';
-const LEGACY_STATE_FILE = 'state.json';
-const LEGACY_WORKSPACE_STATE_KEY = 'treeData';
 const STORAGE_LOCATION_STATE_KEY = 'storageLocationUri';
 const SCHEMA_VERSION = 2;
 const DEFAULT_FOLDER_COLOR = '#0074D9';
@@ -215,7 +213,6 @@ export class PowerSearchStorage {
 
 	async loadState(): Promise<LoadedPowerSearchState> {
 		try {
-			await this.migrateLegacyStateIfNeeded();
 			const folders = await this.readJson<FoldersFile>(this.foldersUri(), { schemaVersion: SCHEMA_VERSION, folders: [] });
 			const ui = await this.readJson<UiFile>(this.uiUri(), {
 				schemaVersion: SCHEMA_VERSION,
@@ -839,7 +836,6 @@ export class PowerSearchStorage {
 		this.rangeCache.clear();
 		this.rangeShardPathCache.clear();
 		this.folderRangesCache.clear();
-		await this.context.workspaceState.update(LEGACY_WORKSPACE_STATE_KEY, undefined);
 		await this.initialize();
 	}
 
@@ -975,64 +971,6 @@ export class PowerSearchStorage {
 		index.ranges = nextRanges;
 		await this.saveFolderRanges(index);
 		return true;
-	}
-
-	private async migrateLegacyStateIfNeeded(): Promise<void> {
-		const foldersExist = await exists(this.foldersUri());
-		if (foldersExist) {
-			return;
-		}
-
-		const migratedFolders: FolderItem[] = [];
-		let migratedRanges = 0;
-
-		const legacyFile = await this.readJson<any | undefined>(vscode.Uri.joinPath(this.storageRootUri(), LEGACY_STATE_FILE), undefined);
-		if (legacyFile?.schemaVersion === 1 && legacyFile.tree?.type === 'root') {
-			migratedRanges += await this.migrateLegacyNodes(legacyFile.tree.children ?? [], migratedFolders, undefined);
-			await this.deleteIfExists(vscode.Uri.joinPath(this.storageRootUri(), LEGACY_STATE_FILE));
-		}
-
-		const legacyWorkspaceTree = this.context.workspaceState.get<any[]>(LEGACY_WORKSPACE_STATE_KEY, []);
-		if (legacyWorkspaceTree.length > 0) {
-			migratedRanges += await this.migrateLegacyNodes(legacyWorkspaceTree, migratedFolders, undefined);
-			await this.context.workspaceState.update(LEGACY_WORKSPACE_STATE_KEY, undefined);
-		}
-
-		if (migratedFolders.length > 0) {
-			await this.saveFolders(migratedFolders);
-			if (migratedRanges > 0) {
-				await this.writeIndex();
-			}
-			void vscode.window.showInformationMessage(`Migrated PowerSearch data to ${STORAGE_DIRECTORY}.`);
-		}
-	}
-
-	private async migrateLegacyNodes(nodes: any[], target: FolderItem[], parent: FolderItem | undefined): Promise<number> {
-		let migratedRanges = 0;
-		for (const node of nodes) {
-			if (node?.type === 'folder') {
-				const folder = createFolderItem({
-					name: node.name ?? 'Folder',
-					color: node.color,
-					inheritsColor: node.inheritsColor ?? false,
-					children: [],
-					references: [],
-					isHidden: node.isHidden ?? false,
-					expanded: node.expanded,
-					parent,
-				});
-				target.push(folder);
-				migratedRanges += await this.migrateLegacyNodes(node.children ?? node.references ?? [], folder.children, folder);
-			}
-			else if (node?.type === 'ref' && parent) {
-				const location = legacyLocationToVscode(node.location);
-				if (location) {
-					const result = await this.addRanges([location], parent.id);
-					migratedRanges += result.added;
-				}
-			}
-		}
-		return migratedRanges;
 	}
 
 	private keyForUri(uri: vscode.Uri): WorkspaceFileKey | undefined {
@@ -1557,17 +1495,6 @@ function offsetAtInText(text: string, lineOffsets: number[], position: PositionD
 	const lineStart = lineOffsets[line];
 	const lineEnd = line + 1 < lineOffsets.length ? lineOffsets[line + 1] - 1 : text.length;
 	return Math.max(lineStart, Math.min(lineStart + position.character, lineEnd));
-}
-
-function legacyLocationToVscode(location: any): vscode.Location | undefined {
-	if (!location?.uriString || !location?.range) {
-		return undefined;
-	}
-	const range = new vscode.Range(
-		new vscode.Position(location.range.start.line, location.range.start.character),
-		new vscode.Position(location.range.end.line, location.range.end.character),
-	);
-	return new vscode.Location(vscode.Uri.parse(location.uriString), range);
 }
 
 function isFileNotFoundError(error: unknown): boolean {
