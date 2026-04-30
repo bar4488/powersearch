@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { PowerSearchStorage } from '../storage';
 import { folderAndAncestorsVisible, folderBadgeText, getPreviewChunks, indicesToNode, nodeToIndices, resolveFolderColor } from '../utils';
 import {
+	createFolderItem,
 	FolderItem,
 	ParentNode,
 	ReferenceItem,
@@ -253,6 +254,10 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		return this.findFolder(folderId);
 	}
 
+	public getFolderSubtree(folder: FolderItem): FolderItem[] {
+		return this.flattenFolders(folder);
+	}
+
 	public getReference(reference: StoredRangeReference): ReferenceItem | undefined {
 		for (const folder of this.flattenFolders()) {
 			const match = folder.references.find((item) => sameStoredRangeReference(item, reference));
@@ -289,6 +294,13 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 		node.parent = parent;
 		parent.children = [node, ...parent.children];
 		this.updateTree();
+	}
+
+	public duplicateNode(source: FolderItem, name: string): { root: FolderItem; folderIdMap: Map<string, string>; parent: ParentNode; } {
+		const folderIdMap = new Map<string, string>();
+		const clone = this.cloneFolderSubtree(source, undefined, folderIdMap, true);
+		clone.name = name;
+		return { root: clone, folderIdMap, parent: source.parent ?? this.root };
 	}
 
 	public addReferences(folder: FolderItem, references: StoredRangeReference[]) {
@@ -609,6 +621,27 @@ export class FoldersTreeDataProvider implements vscode.TreeDataProvider<TreeNode
 			return true;
 		}
 		return node.children.some((child) => this.containsNode(child, searchNode));
+	}
+
+	private cloneFolderSubtree(
+		source: FolderItem,
+		parent: ParentNode | undefined,
+		folderIdMap: Map<string, string>,
+		hideRoot: boolean,
+	): FolderItem {
+		const clone = createFolderItem({
+			name: source.name,
+			color: source.color,
+			inheritsColor: source.inheritsColor,
+			isHidden: hideRoot ? true : source.isHidden,
+			expanded: source.expanded,
+			children: [],
+			references: [],
+			parent,
+		});
+		folderIdMap.set(source.id, clone.id);
+		clone.children = source.children.map((child) => this.cloneFolderSubtree(child, clone, folderIdMap, false));
+		return clone;
 	}
 
 }

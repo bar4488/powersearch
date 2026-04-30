@@ -81,6 +81,8 @@ Folder IDs are stable identifiers. Ranges point to `folderId`, so folders can be
 
 `inheritsColor` is optional. When `true`, the folder resolves its decoration color from the nearest ancestor with an explicit color.
 
+Duplicating a folder creates new folder ids for the duplicated subtree. Folder notes are not copied because note files are deterministic by `folderId` and are created lazily on demand.
+
 ## `docs/root.md` and `docs/<folder-id>.md`
 
 Stores optional Markdown notes for the synthetic root and for folders. These files are created on demand when the user opens notes.
@@ -217,6 +219,7 @@ Files outside the open workspace cannot be represented in the current format and
 - Saved searches are lazy: PowerSearch only opens files and computes match ranges when a search is run in the Search view.
 - Decorations for an editor read only that editor's range shard.
 - Adding a range rewrites one file shard, one folder index, and the small file index.
+- Duplicating a folder subtree copies matching range records into the same file shards under new folder ids and appends new lightweight folder-index references for the duplicated folders.
 - Editing a range comment rewrites only the affected file shard.
 - Ordinary text edits in a tracked file rewrite only that file's shard, and prune folder-index entries for ranges that collapse away.
 - Moving ranges by drag-and-drop or deleting them from the tree rewrites the affected file shard plus the affected folder indexes, and updates the file index when shard counts change.

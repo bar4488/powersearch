@@ -90,6 +90,26 @@
         "icon": "resources/edit.svg"
       },
       {
+        "command": "powersearch.duplicateFolder",
+        "title": "Duplicate Folder"
+      },
+      {
+        "command": "powersearch.removeFolderColor",
+        "title": "Remove Color"
+      },
+      {
+        "command": "powersearch.removeFolderColorRecursive",
+        "title": "Remove Color Recursively"
+      },
+      {
+        "command": "powersearch.clearFolderRangeComments",
+        "title": "Remove All Range Comments"
+      },
+      {
+        "command": "powersearch.clearFolderRangeCommentsRecursive",
+        "title": "Remove All Range Comments Recursively"
+      },
+      {
         "command": "powersearch.removeFolder",
         "title": "Remove Folder",
         "icon": "resources/bin.svg"
@@ -172,6 +192,10 @@
           "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
         },
         {
+          "command": "powersearch.duplicateFolder",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+        },
+        {
           "command": "powersearch.removeFolder",
           "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
         },
@@ -186,6 +210,22 @@
         {
           "command": "powersearch.clearTargetFolder",
           "when": "viewItem == targetFolder || viewItem == hiddenTargetFolder"
+        },
+        {
+          "command": "powersearch.removeFolderColor",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+        },
+        {
+          "command": "powersearch.removeFolderColorRecursive",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+        },
+        {
+          "command": "powersearch.clearFolderRangeComments",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
+        },
+        {
+          "command": "powersearch.clearFolderRangeCommentsRecursive",
+          "when": "viewItem == visibleFolder || viewItem == hiddenFolder || viewItem == targetFolder || viewItem == hiddenTargetFolder"
         },
         {
           "command": "powersearch.editRangeComment",

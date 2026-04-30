@@ -128,6 +128,10 @@ export interface UpdateRangesForDocumentResult {
 	removedReferences: StoredRangeReference[];
 }
 
+export interface DuplicateFolderRangesResult {
+	addedReferencesByFolderId: Map<string, StoredRangeReference[]>;
+}
+
 export class PowerSearchStorage {
 	private readonly rangeCache = new Map<string, RangeShardFile>();
 	private readonly rangeShardPathCache = new Map<string, RangeShardFile>();
@@ -489,6 +493,94 @@ export class PowerSearchStorage {
 			changed: true,
 			removedReferences,
 		};
+	}
+
+	async duplicateFolderRanges(folderIdMap: Map<string, string>): Promise<DuplicateFolderRangesResult> {
+		return this.runRangeMutation(() => this.duplicateFolderRangesUnlocked(folderIdMap));
+	}
+
+	private async duplicateFolderRangesUnlocked(folderIdMap: Map<string, string>): Promise<DuplicateFolderRangesResult> {
+		const addedReferencesByFolderId = new Map<string, StoredRangeReference[]>();
+		if (folderIdMap.size === 0) {
+			return { addedReferencesByFolderId };
+		}
+
+		let changed = false;
+		for (const workspace of this.index.workspaces) {
+			for (const file of workspace.files) {
+				const shard = await this.loadRangeShard({ workspaceFolder: workspace.workspaceFolder, path: file.path });
+				const shardPath = shardRelativePath(shard);
+				const additions: StoredRange[] = [];
+				for (const storedRange of shard.ranges) {
+					const newFolderId = folderIdMap.get(storedRange.folderId);
+					if (!newFolderId) {
+						continue;
+					}
+					const duplicatedRange: StoredRange = {
+						...storedRange,
+						id: createId('rng'),
+						folderId: newFolderId,
+						range: {
+							start: { ...storedRange.range.start },
+							end: { ...storedRange.range.end },
+						},
+						comment: storedRange.comment,
+					};
+					additions.push(duplicatedRange);
+					const references = addedReferencesByFolderId.get(newFolderId) ?? [];
+					references.push({ id: duplicatedRange.id, shard: shardPath });
+					addedReferencesByFolderId.set(newFolderId, references);
+				}
+				if (additions.length === 0) {
+					continue;
+				}
+				shard.ranges.push(...additions);
+				await this.saveRangeShard(shard);
+				changed = true;
+			}
+		}
+
+		for (const [folderId, references] of addedReferencesByFolderId) {
+			await this.addFolderReferences(folderId, references);
+		}
+		if (changed) {
+			await this.writeIndex();
+			await this.touchManifest();
+		}
+		return { addedReferencesByFolderId };
+	}
+
+	async clearRangeCommentsForFolders(folderIds: Set<string>): Promise<boolean> {
+		return this.runRangeMutation(() => this.clearRangeCommentsForFoldersUnlocked(folderIds));
+	}
+
+	private async clearRangeCommentsForFoldersUnlocked(folderIds: Set<string>): Promise<boolean> {
+		if (folderIds.size === 0) {
+			return false;
+		}
+
+		let changed = false;
+		for (const workspace of this.index.workspaces) {
+			for (const file of workspace.files) {
+				const shard = await this.loadRangeShard({ workspaceFolder: workspace.workspaceFolder, path: file.path });
+				let shardChanged = false;
+				for (const storedRange of shard.ranges) {
+					if (!folderIds.has(storedRange.folderId) || !storedRange.comment) {
+						continue;
+					}
+					storedRange.comment = undefined;
+					shardChanged = true;
+					changed = true;
+				}
+				if (shardChanged) {
+					await this.saveRangeShard(shard);
+				}
+			}
+		}
+		if (changed) {
+			await this.touchManifest();
+		}
+		return changed;
 	}
 
 	async removeDanglingReference(folderId: string, reference: StoredRangeReference): Promise<void> {

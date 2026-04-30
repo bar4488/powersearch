@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { DecorationManager } from './decorator';
 import { PowerSearchStorage, StoredDocumentRange } from './storage';
 import { FoldersTreeDataProvider } from './tree/tree';
-import { FolderItem, ReferenceItem, SavedSearchData, SearchScope, TreeNode, VisibleRootItem, createFolderItem, createId, rangeFromData } from './tree/tree_item';
+import { FolderItem, ReferenceItem, SavedSearchData, SearchScope, TreeNode, VisibleRootItem, createFolderItem, createId, createReferenceItem, rangeFromData } from './tree/tree_item';
 import { getPreviewChunks, isValidColor } from './utils';
 
 const defaultColors = [
@@ -232,6 +232,21 @@ export class TreeController {
 		this.tree.updateNode(folder);
 	}
 
+	public async onDuplicateFolder(folder: FolderItem) {
+		const newName = await vscode.window.showInputBox({
+			prompt: 'Enter folder name',
+			value: `${folder.name} Copy`,
+		});
+		if (!newName) {
+			return;
+		}
+
+		const duplicate = this.tree.duplicateNode(folder, newName);
+		const result = await this.storage.duplicateFolderRanges(duplicate.folderIdMap);
+		this.populateDuplicateReferences(duplicate.root, result.addedReferencesByFolderId);
+		this.tree.addNode(duplicate.root, duplicate.parent.type === 'folder' ? duplicate.parent : undefined);
+	}
+
 	public async onOpenFolderDoc(folder?: FolderItem | VisibleRootItem) {
 		const target = folder ?? this.tree.getSelectedFolder();
 		if (!target) {
@@ -333,6 +348,22 @@ export class TreeController {
 		await this.decorations.updateVisibleEditors();
 	}
 
+	public async onRemoveFolderColor(folder: FolderItem, recursive: boolean) {
+		for (const entry of this.getFolderScope(folder, recursive)) {
+			this.tree.setFolderColor(entry, undefined, false);
+		}
+		await this.decorations.updateVisibleEditors();
+	}
+
+	public async onClearRangeComments(folder: FolderItem, recursive: boolean) {
+		const changed = await this.storage.clearRangeCommentsForFolders(new Set(this.getFolderScope(folder, recursive).map((entry) => entry.id)));
+		if (!changed) {
+			return;
+		}
+		this.tree.refreshTree();
+		await this.decorations.updateVisibleEditors();
+	}
+
 	private async requireTargetFolder(): Promise<FolderItem | undefined> {
 		return this.tree.getSelectedFolder() ?? this.pickFolder('Choose where new ranges should be stored.', true);
 	}
@@ -417,6 +448,21 @@ export class TreeController {
 			return this.createFolder();
 		}
 		return choice.folder;
+	}
+
+	private getFolderScope(folder: FolderItem, recursive: boolean): FolderItem[] {
+		return recursive ? this.tree.getFolderSubtree(folder) : [folder];
+	}
+
+	private populateDuplicateReferences(folder: FolderItem, referencesByFolderId: Map<string, { id: string; shard: string; }[]>) {
+		folder.references = (referencesByFolderId.get(folder.id) ?? []).map((reference) => createReferenceItem({
+			id: reference.id,
+			shard: reference.shard,
+			parent: folder,
+		}));
+		for (const child of folder.children) {
+			this.populateDuplicateReferences(child, referencesByFolderId);
+		}
 	}
 
 	private describeFolder(folder: FolderItem): string | undefined {
