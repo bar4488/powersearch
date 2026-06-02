@@ -161,7 +161,7 @@ export class PowerSearchStorage {
 			return false;
 		}
 
-		const location = await pickStorageLocation(workspaceFolders, 'Choose where PowerSearch should store .powersearch');
+		const location = await pickStorageLocation(workspaceFolders, 'Choose the folder PowerSearch should use for storage');
 		if (!location) {
 			return false;
 		}
@@ -186,27 +186,76 @@ export class PowerSearchStorage {
 		const configuredLocation = context.workspaceState.get<string>(STORAGE_LOCATION_STATE_KEY);
 		if (configuredLocation) {
 			const configuredUri = vscode.Uri.parse(configuredLocation);
-			const storage = new PowerSearchStorage(context, configuredUri, configuredUri.fsPath, workspaceFolders.map((folder) => ({
-				id: folder.name,
-				name: folder.name,
-			})));
-			await storage.initialize();
-			return storage;
+			return PowerSearchStorage.openAtLocation(context, workspaceFolders, configuredUri, {
+				allowRecovery: true,
+				failureMessage: `PowerSearch could not use the configured storage location at ${configuredUri.fsPath}.`,
+			});
 		}
 
 		const storageLocation = await chooseStorageLocation(context, workspaceFolders);
 		if (!storageLocation) {
-			void vscode.window.showWarningMessage('PowerSearch storage was not configured. Choose a folder where .powersearch should be stored.');
+			void vscode.window.showWarningMessage('PowerSearch storage was not configured. Choose a folder for PowerSearch data.');
 			return undefined;
 		}
 
-		await context.workspaceState.update(STORAGE_LOCATION_STATE_KEY, storageLocation.toString());
-		const storage = new PowerSearchStorage(context, storageLocation, storageLocation.fsPath, workspaceFolders.map((folder) => ({
+		return PowerSearchStorage.openAtLocation(context, workspaceFolders, storageLocation, {
+			allowRecovery: true,
+			failureMessage: `PowerSearch could not create or write its storage data in ${storageLocation.fsPath}.`,
+		});
+	}
+
+	private static createWorkspaceDescriptors(workspaceFolders: readonly vscode.WorkspaceFolder[]): WorkspaceDescriptor[] {
+		return workspaceFolders.map((folder) => ({
 			id: folder.name,
 			name: folder.name,
-		})));
-		await storage.initialize();
-		return storage;
+		}));
+	}
+
+	private static async openAtLocation(
+		context: vscode.ExtensionContext,
+		workspaceFolders: readonly vscode.WorkspaceFolder[],
+		storageLocation: vscode.Uri,
+		options: { allowRecovery: boolean; failureMessage: string; },
+	): Promise<PowerSearchStorage | undefined> {
+		const storage = new PowerSearchStorage(
+			context,
+			storageLocation,
+			storageLocation.fsPath,
+			PowerSearchStorage.createWorkspaceDescriptors(workspaceFolders),
+		);
+
+		try {
+			await storage.initialize();
+			await context.workspaceState.update(STORAGE_LOCATION_STATE_KEY, storageLocation.toString());
+			return storage;
+		}
+		catch (error) {
+			if (!options.allowRecovery || !isStorageLocationErrorRecoverable(error)) {
+				throw error;
+			}
+
+			const retryChoice = await vscode.window.showWarningMessage(
+				`${options.failureMessage} Choose another folder for PowerSearch storage.`,
+				'Choose Folder',
+			);
+			if (retryChoice !== 'Choose Folder') {
+				return undefined;
+			}
+
+			const fallbackLocation = await pickStorageLocation(
+				workspaceFolders,
+				'Choose the folder PowerSearch should use for storage',
+				storageLocation,
+			);
+			if (!fallbackLocation) {
+				return undefined;
+			}
+
+			return PowerSearchStorage.openAtLocation(context, workspaceFolders, fallbackLocation, {
+				allowRecovery: false,
+				failureMessage: `PowerSearch could not create or write its storage data in ${fallbackLocation.fsPath}.`,
+			});
+		}
 	}
 
 	async loadState(): Promise<LoadedPowerSearchState> {
@@ -1176,7 +1225,7 @@ export class PowerSearchStorage {
 	}
 
 	private storageRootUri(): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageLocation, STORAGE_DIRECTORY);
+		return this.storageLocation;
 	}
 
 	private manifestUri(): vscode.Uri {
@@ -1269,8 +1318,9 @@ async function chooseStorageLocation(
 ): Promise<vscode.Uri | undefined> {
 	const existingLocations: vscode.Uri[] = [];
 	for (const folder of workspaceFolders) {
-		if (await exists(vscode.Uri.joinPath(folder.uri, STORAGE_DIRECTORY, MANIFEST_FILE)) || await exists(vscode.Uri.joinPath(folder.uri, STORAGE_DIRECTORY, FOLDERS_FILE))) {
-			existingLocations.push(folder.uri);
+		const defaultLocation = defaultWorkspaceStorageRoot(folder.uri);
+		if (await isStorageRoot(defaultLocation)) {
+			existingLocations.push(defaultLocation);
 		}
 	}
 
@@ -1279,7 +1329,7 @@ async function chooseStorageLocation(
 	}
 
 	if (workspaceFolders.length === 1 && existingLocations.length === 0) {
-		return workspaceFolders[0].uri;
+		return defaultWorkspaceStorageRoot(workspaceFolders[0].uri);
 	}
 
 	if (existingLocations.length > 1) {
@@ -1299,7 +1349,7 @@ async function chooseStorageLocation(
 	const initialUri = initialValue
 		? vscode.Uri.parse(initialValue)
 		: workspaceFolders[0]?.uri;
-	return pickStorageLocation(workspaceFolders, 'Choose where PowerSearch should store .powersearch', initialUri);
+	return pickStorageLocation(workspaceFolders, 'Choose the folder PowerSearch should use for storage', initialUri);
 }
 
 async function pickStorageLocation(
@@ -1316,6 +1366,15 @@ async function pickStorageLocation(
 		defaultUri: defaultUri ?? workspaceFolders[0]?.uri,
 	});
 	return selected?.[0];
+}
+
+function defaultWorkspaceStorageRoot(workspaceUri: vscode.Uri): vscode.Uri {
+	return vscode.Uri.joinPath(workspaceUri, STORAGE_DIRECTORY);
+}
+
+async function isStorageRoot(uri: vscode.Uri): Promise<boolean> {
+	return await exists(vscode.Uri.joinPath(uri, MANIFEST_FILE))
+		|| await exists(vscode.Uri.joinPath(uri, FOLDERS_FILE));
 }
 
 function findDuplicateNames(workspaceFolders: readonly vscode.WorkspaceFolder[]): string[] {
@@ -1494,6 +1553,10 @@ function offsetAtInText(text: string, lineOffsets: number[], position: PositionD
 
 function isFileNotFoundError(error: unknown): boolean {
 	return error instanceof vscode.FileSystemError && error.code === 'FileNotFound';
+}
+
+function isStorageLocationErrorRecoverable(error: unknown): boolean {
+	return error instanceof vscode.FileSystemError;
 }
 
 function isValidHexColor(value: string): boolean {
