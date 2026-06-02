@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "workspaceRoots": [
+    {
+      "name": "powersearch",
+      "path": "/home/bar/dev/projects/powersearch"
+    }
+  ]
+}

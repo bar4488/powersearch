@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "updatedAt": "2026-06-02T21:41:44.707Z",
+  "workspaces": [
+    {
+      "workspaceFolder": "powersearch",
+      "files": [
+        {
+          "path": "README.md",
+          "shard": "ranges/powersearch/7c/7c4244749389ba8eb05f969e01890ff5f5491b2c.json",
+          "rangeCount": 3,
+          "folderCounts": {
+            "fld_4933af747b9a4e63aa2f91b58e9aa69c": 2,
+            "fld_f0094111bd504eb586a325ed5becc1c8": 1
+          }
+        }
+      ]
+    }
+  ]
+}

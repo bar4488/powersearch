@@ -1,157 +1,45 @@
-import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { FolderData, FolderItem, PositionData, ReferenceItem, SavedSearchData, StoredRange, StoredRangeReference, createFolderItem, createId, createReferenceItem, rangeFromData, rangeToData, referenceKey, sameStoredRangeReference } from './tree/tree_item';
+import {
+	AddRangesResult,
+	DeleteRangeResult,
+	DuplicateFolderRangesResult,
+	LoadedPowerSearchState,
+	MoveRangeRequest,
+	MoveRangeResult,
+	PowerSearchCore,
+	PowerSearchSettings,
+	ResolvedReference as CoreResolvedReference,
+	STORAGE_DIRECTORY,
+	StoredDocumentRange,
+	UpdateRangesForDocumentResult,
+	WorkspaceFileKey,
+} from './core/storage_core';
+import { FolderItem, SavedSearchData, StoredRange, StoredRangeReference, rangeFromData, rangeToData } from './tree/tree_item';
 
-const STORAGE_DIRECTORY = '.powersearch';
-const MANIFEST_FILE = 'manifest.json';
-const FOLDERS_FILE = 'folders.json';
-const SEARCHES_FILE = 'searches.json';
-const UI_FILE = 'ui.json';
-const SETTINGS_FILE = 'settings.json';
-const FILES_INDEX = 'indexes/files.json';
-const FOLDER_RANGES_DIRECTORY = 'indexes/folders';
-const DOCS_DIRECTORY = 'docs';
 const STORAGE_LOCATION_STATE_KEY = 'storageLocationUri';
-const SCHEMA_VERSION = 2;
-const DEFAULT_FOLDER_COLOR = '#0074D9';
 
-interface WorkspaceDescriptor {
-	id: string;
-	name: string;
-}
-
-interface ManifestFile {
-	schemaVersion: typeof SCHEMA_VERSION;
-	createdAt: string;
-	updatedAt: string;
-	storageWorkspace: string;
-	workspaces: WorkspaceDescriptor[];
-}
-
-interface FoldersFile {
-	schemaVersion: typeof SCHEMA_VERSION;
-	folders: FolderData[];
-}
-
-interface UiFile {
-	schemaVersion: typeof SCHEMA_VERSION;
-	selectedFolderId: string | null;
-	rootColor?: string;
-	rootIsHidden?: boolean;
-	rootExpanded?: boolean;
-}
-
-interface SearchesFile {
-	schemaVersion: typeof SCHEMA_VERSION;
-	searches: SavedSearchData[];
-}
-
-interface SettingsFile {
-	schemaVersion: typeof SCHEMA_VERSION;
-	defaultFolderColor: string;
-}
-
-interface FileIndex {
-	schemaVersion: typeof SCHEMA_VERSION;
-	updatedAt: string;
-	workspaces: WorkspaceFileIndex[];
-}
-
-interface WorkspaceFileIndex {
-	workspaceFolder: string;
-	files: FileIndexEntry[];
-}
-
-interface FileIndexEntry {
-	path: string;
-	shard: string;
-	rangeCount: number;
-	folderCounts: Record<string, number>;
-}
-
-interface FolderRangesFile {
-	schemaVersion: typeof SCHEMA_VERSION;
-	folderId: string;
-	ranges: StoredRangeReference[];
-}
-
-interface RangeShardFile {
-	schemaVersion: typeof SCHEMA_VERSION;
-	workspaceFolder: string;
-	path: string;
-	ranges: StoredRange[];
-}
-
-interface WorkspaceFileKey {
-	workspaceFolder: string;
-	path: string;
-}
-
-export interface LoadedPowerSearchState {
-	folders: FolderItem[];
-	selectedFolderId: string | null;
-	rootColor?: string;
-	rootIsHidden: boolean;
-	rootExpanded: boolean;
-	searches: SavedSearchData[];
-}
-
-export interface PowerSearchSettings {
-	defaultFolderColor: string;
-}
-
-export interface AddRangesResult {
-	added: number;
-	addedReferences: StoredRangeReference[];
-	skippedOutsideWorkspace: number;
-}
-
-export interface DeleteRangeResult {
-	removed: boolean;
-	prunedDangling: boolean;
-}
-
-export interface MoveRangeResult {
-	outcome: 'moved' | 'deduplicated' | 'missing' | 'unchanged';
-	reference?: StoredRangeReference;
-}
-
-export interface MoveRangeRequest {
-	sourceFolderId: string;
-	reference: StoredRangeReference;
-}
-
-export interface StoredDocumentRange {
-	reference: StoredRangeReference;
-	storedRange: StoredRange;
-}
+export {
+	AddRangesResult,
+	DeleteRangeResult,
+	DuplicateFolderRangesResult,
+	LoadedPowerSearchState,
+	MoveRangeRequest,
+	MoveRangeResult,
+	PowerSearchSettings,
+	StoredDocumentRange,
+	UpdateRangesForDocumentResult,
+	WorkspaceFileKey,
+};
 
 export interface ResolvedReference {
 	location: vscode.Location;
 	storedRange: StoredRange;
 }
 
-export interface UpdateRangesForDocumentResult {
-	changed: boolean;
-	removedReferences: StoredRangeReference[];
-}
-
-export interface DuplicateFolderRangesResult {
-	addedReferencesByFolderId: Map<string, StoredRangeReference[]>;
-}
-
 export class PowerSearchStorage {
-	private readonly rangeCache = new Map<string, RangeShardFile>();
-	private readonly rangeShardPathCache = new Map<string, RangeShardFile>();
-	private readonly folderRangesCache = new Map<string, FolderRangesFile>();
-	private index: FileIndex = emptyIndex();
-	private rangeMutationQueue: Promise<void> = Promise.resolve();
-
 	private constructor(
-		private readonly context: vscode.ExtensionContext,
+		private readonly core: PowerSearchCore,
 		private readonly storageLocation: vscode.Uri,
-		private readonly storageLocationLabel: string,
-		private readonly workspaces: WorkspaceDescriptor[],
 	) { }
 
 	static async configureStorageLocation(context: vscode.ExtensionContext): Promise<boolean> {
@@ -204,28 +92,22 @@ export class PowerSearchStorage {
 		});
 	}
 
-	private static createWorkspaceDescriptors(workspaceFolders: readonly vscode.WorkspaceFolder[]): WorkspaceDescriptor[] {
-		return workspaceFolders.map((folder) => ({
-			id: folder.name,
-			name: folder.name,
-		}));
-	}
-
 	private static async openAtLocation(
 		context: vscode.ExtensionContext,
 		workspaceFolders: readonly vscode.WorkspaceFolder[],
 		storageLocation: vscode.Uri,
 		options: { allowRecovery: boolean; failureMessage: string; },
 	): Promise<PowerSearchStorage | undefined> {
-		const storage = new PowerSearchStorage(
-			context,
-			storageLocation,
-			storageLocation.fsPath,
-			PowerSearchStorage.createWorkspaceDescriptors(workspaceFolders),
-		);
+		const core = new PowerSearchCore({
+			storageRoot: storageLocation.fsPath,
+			storageLocationLabel: storageLocation.fsPath,
+			workspaces: workspaceFolders.map((folder) => ({ id: folder.name, name: folder.name })),
+			workspaceRoots: workspaceFolders.map((folder) => ({ name: folder.name, path: folder.uri.fsPath })),
+		});
+		const storage = new PowerSearchStorage(core, storageLocation);
 
 		try {
-			await storage.initialize();
+			await core.initialize();
 			await context.workspaceState.update(STORAGE_LOCATION_STATE_KEY, storageLocation.toString());
 			return storage;
 		}
@@ -260,34 +142,7 @@ export class PowerSearchStorage {
 
 	async loadState(): Promise<LoadedPowerSearchState> {
 		try {
-			const folders = await this.readJson<FoldersFile>(this.foldersUri(), { schemaVersion: SCHEMA_VERSION, folders: [] });
-			const ui = await this.readJson<UiFile>(this.uiUri(), {
-				schemaVersion: SCHEMA_VERSION,
-				selectedFolderId: null,
-				rootIsHidden: false,
-				rootExpanded: true,
-			});
-			const searches = await this.readJson<SearchesFile>(this.searchesUri(), { schemaVersion: SCHEMA_VERSION, searches: [] });
-			if (folders.schemaVersion !== SCHEMA_VERSION || !Array.isArray(folders.folders)) {
-				throw new Error('Unsupported folders.json schema.');
-			}
-			if (ui.schemaVersion !== SCHEMA_VERSION) {
-				throw new Error('Unsupported ui.json schema.');
-			}
-			if (searches.schemaVersion !== SCHEMA_VERSION || !Array.isArray(searches.searches)) {
-				throw new Error('Unsupported searches.json schema.');
-			}
-
-			const loadedFolders = folders.folders.map((folder) => deserializeFolder(folder));
-			await this.loadFolderReferencesIntoTree(loadedFolders);
-			return {
-				folders: loadedFolders,
-				selectedFolderId: ui.selectedFolderId,
-				rootColor: ui.rootColor,
-				rootIsHidden: ui.rootIsHidden ?? false,
-				rootExpanded: ui.rootExpanded ?? true,
-				searches: searches.searches,
-			};
+			return await this.core.loadState();
 		}
 		catch (error) {
 			void vscode.window.showWarningMessage(`PowerSearch could not load .powersearch data: ${error instanceof Error ? error.message : String(error)}`);
@@ -302,147 +157,56 @@ export class PowerSearchStorage {
 	}
 
 	async saveFolders(folders: FolderItem[]): Promise<void> {
-		await this.writeJson(this.foldersUri(), {
-			schemaVersion: SCHEMA_VERSION,
-			folders: folders.map(serializeFolder),
-		});
-		await this.touchManifest();
+		return this.core.saveFolders(folders);
 	}
 
 	async saveUi(
 		selectedFolderId: string | null,
 		rootState?: { color?: string; isHidden: boolean; expanded: boolean; },
 	): Promise<void> {
-		await this.writeJson(this.uiUri(), {
-			schemaVersion: SCHEMA_VERSION,
-			selectedFolderId,
-			rootColor: rootState?.color,
-			rootIsHidden: rootState?.isHidden ?? false,
-			rootExpanded: rootState?.expanded ?? true,
-		});
-		await this.touchManifest();
+		return this.core.saveUi(selectedFolderId, rootState);
 	}
 
 	async saveSearches(searches: SavedSearchData[]): Promise<void> {
-		if (searches.length === 0) {
-			await this.deleteIfExists(this.searchesUri());
-			await this.touchManifest();
-			return;
-		}
-		await this.writeJson(this.searchesUri(), {
-			schemaVersion: SCHEMA_VERSION,
-			searches,
-		});
-		await this.touchManifest();
+		return this.core.saveSearches(searches);
 	}
 
 	async getSettings(): Promise<PowerSearchSettings> {
-		const settings = await this.loadSettings();
-		return {
-			defaultFolderColor: settings.defaultFolderColor,
-		};
+		return this.core.getSettings();
 	}
 
 	async ensureFolderDoc(folder: FolderItem): Promise<vscode.Uri> {
-		const uri = this.folderDocUri(folder.id);
-		if (!await exists(uri)) {
-			const content = [
-				`# ${folder.name}`,
-				'',
-				'PowerSearch folder notes.',
-				'',
-			].join('\n');
-			await this.writeFile(uri, content);
-			await this.touchManifest();
-		}
-		return uri;
+		return vscode.Uri.file(await this.core.ensureFolderDoc(folder));
 	}
 
 	async ensureRootDoc(): Promise<vscode.Uri> {
-		const uri = this.rootDocUri();
-		if (!await exists(uri)) {
-			const content = [
-				'# Folders',
-				'',
-				'PowerSearch root notes.',
-				'',
-			].join('\n');
-			await this.writeFile(uri, content);
-			await this.touchManifest();
-		}
-		return uri;
+		return vscode.Uri.file(await this.core.ensureRootDoc());
 	}
 
 	async removeFolderDocs(folderIds: Iterable<string>): Promise<void> {
-		let changed = false;
-		for (const folderId of folderIds) {
-			const uri = this.folderDocUri(folderId);
-			if (await exists(uri)) {
-				await this.deleteIfExists(uri);
-				changed = true;
-			}
-		}
-		if (changed) {
-			await this.touchManifest();
-		}
+		return this.core.removeFolderDocs(folderIds);
 	}
 
 	async addRanges(locations: vscode.Location[], folderId: string): Promise<AddRangesResult> {
-		return this.runRangeMutation(() => this.addRangesUnlocked(locations, folderId));
-	}
-
-	private async addRangesUnlocked(locations: vscode.Location[], folderId: string): Promise<AddRangesResult> {
-		const grouped = new Map<string, { key: WorkspaceFileKey; ranges: vscode.Range[] }>();
+		const coreLocations = [];
 		let skippedOutsideWorkspace = 0;
-
 		for (const location of locations) {
 			const key = this.keyForUri(location.uri);
 			if (!key) {
 				skippedOutsideWorkspace += 1;
 				continue;
 			}
-			const cacheKey = fileCacheKey(key);
-			const entry = grouped.get(cacheKey) ?? { key, ranges: [] };
-			entry.ranges.push(location.range);
-			grouped.set(cacheKey, entry);
+			coreLocations.push({
+				key,
+				range: rangeToData(location.range),
+			});
 		}
 
-		let added = 0;
-		const addedReferences: StoredRangeReference[] = [];
-		for (const entry of grouped.values()) {
-			const shard = await this.loadRangeShard(entry.key);
-			const shardPath = shardRelativePath(entry.key);
-			const existingRanges = new Set(shard.ranges.map(rangeIdentity));
-			let shardChanged = false;
-			for (const range of entry.ranges) {
-				const storedRange = rangeToData(range);
-				const identity = rangeIdentity({ folderId, range: storedRange });
-				if (existingRanges.has(identity)) {
-					continue;
-				}
-				const id = createId('rng');
-				shard.ranges.push({
-					id,
-					folderId,
-					range: storedRange,
-				});
-				addedReferences.push({ id, shard: shardPath });
-				existingRanges.add(identity);
-				added += 1;
-				shardChanged = true;
-			}
-			if (shardChanged) {
-				await this.saveRangeShard(shard);
-			}
-		}
-
-		if (addedReferences.length > 0) {
-			await this.addFolderReferences(folderId, addedReferences);
-			await this.writeIndex();
-			await this.touchManifest();
-		}
-
-		return { added, addedReferences, skippedOutsideWorkspace };
+		const result = await this.core.addRanges(coreLocations, folderId);
+		return {
+			...result,
+			skippedOutsideWorkspace: result.skippedOutsideWorkspace + skippedOutsideWorkspace,
+		};
 	}
 
 	async getRangesForDocument(uri: vscode.Uri): Promise<StoredRange[]> {
@@ -450,8 +214,7 @@ export class PowerSearchStorage {
 		if (!key) {
 			return [];
 		}
-		const shard = await this.loadRangeShard(key);
-		return shard.ranges;
+		return this.core.getRangesForFile(key);
 	}
 
 	async getDocumentRanges(uri: vscode.Uri): Promise<StoredDocumentRange[]> {
@@ -459,12 +222,7 @@ export class PowerSearchStorage {
 		if (!key) {
 			return [];
 		}
-		const shard = await this.loadRangeShard(key);
-		const shardPath = shardRelativePath(key);
-		return shard.ranges.map((storedRange) => ({
-			reference: { id: storedRange.id, shard: shardPath },
-			storedRange,
-		}));
+		return this.core.getDocumentRangesForFile(key);
 	}
 
 	async resolveReferenceLocation(reference: StoredRangeReference): Promise<vscode.Location | undefined> {
@@ -473,45 +231,12 @@ export class PowerSearchStorage {
 	}
 
 	async resolveReference(reference: StoredRangeReference): Promise<ResolvedReference | undefined> {
-		const shard = await this.loadRangeShardByRelativePath(reference.shard);
-		if (!shard) {
-			return undefined;
-		}
-		const storedRange = shard.ranges.find((item) => item.id === reference.id);
-		if (!storedRange) {
-			return undefined;
-		}
-		const uri = this.workspaceFileUri(shard.workspaceFolder, shard.path);
-		if (!uri) {
-			return undefined;
-		}
-		return {
-			location: new vscode.Location(uri, rangeFromData(storedRange.range)),
-			storedRange,
-		};
+		const resolved = await this.core.resolveReference(reference);
+		return resolved ? toResolvedReference(resolved) : undefined;
 	}
 
 	async updateRangeComment(reference: StoredRangeReference, comment: string | undefined): Promise<boolean> {
-		return this.runRangeMutation(() => this.updateRangeCommentUnlocked(reference, comment));
-	}
-
-	private async updateRangeCommentUnlocked(reference: StoredRangeReference, comment: string | undefined): Promise<boolean> {
-		const shard = await this.loadRangeShardByRelativePath(reference.shard);
-		if (!shard) {
-			return false;
-		}
-		const storedRange = shard.ranges.find((item) => item.id === reference.id);
-		if (!storedRange) {
-			return false;
-		}
-		const nextComment = comment && comment.length > 0 ? comment : undefined;
-		if (storedRange.comment === nextComment) {
-			return false;
-		}
-		storedRange.comment = nextComment;
-		await this.saveRangeShard(shard);
-		await this.touchManifest();
-		return true;
+		return this.core.updateRangeComment(reference, comment);
 	}
 
 	async updateRangesForDocumentChanges(
@@ -519,797 +244,60 @@ export class PowerSearchStorage {
 		document: vscode.TextDocument,
 		contentChanges: readonly vscode.TextDocumentContentChangeEvent[],
 	): Promise<UpdateRangesForDocumentResult> {
-		return this.runRangeMutation(() => this.updateRangesForDocumentChangesUnlocked(previousText, document, contentChanges));
-	}
-
-	private async updateRangesForDocumentChangesUnlocked(
-		previousText: string,
-		document: vscode.TextDocument,
-		contentChanges: readonly vscode.TextDocumentContentChangeEvent[],
-	): Promise<UpdateRangesForDocumentResult> {
 		const key = this.keyForUri(document.uri);
-		if (!key || contentChanges.length === 0 || !this.findIndexEntry(key)) {
+		if (!key) {
 			return { changed: false, removedReferences: [] };
 		}
-
-		const shard = await this.loadRangeShard(key);
-		if (shard.ranges.length === 0) {
-			return { changed: false, removedReferences: [] };
-		}
-
-		const orderedChanges = [...contentChanges]
-			.filter((change) => change.rangeLength > 0 || change.text.length > 0)
-			.sort((left, right) => right.rangeOffset - left.rangeOffset);
-		if (orderedChanges.length === 0) {
-			return { changed: false, removedReferences: [] };
-		}
-
-		const shardPath = shardRelativePath(key);
-		const nextRanges: StoredRange[] = [];
-		const removedReferences: StoredRangeReference[] = [];
-		let changed = false;
-		const previousLineOffsets = computeLineOffsets(previousText);
-		for (const storedRange of shard.ranges) {
-			const nextRange = transformStoredRange(previousText, previousLineOffsets, document, storedRange, orderedChanges);
-			if (!nextRange) {
-				removedReferences.push({ id: storedRange.id, shard: shardPath });
-				await this.removeFolderReference(storedRange.folderId, { id: storedRange.id, shard: shardPath });
-				changed = true;
-				continue;
-			}
-			if (!sameRangeData(storedRange.range, nextRange.range)) {
-				changed = true;
-			}
-			nextRanges.push(nextRange);
-		}
-
-		if (!changed) {
-			return { changed: false, removedReferences: [] };
-		}
-
-		shard.ranges = nextRanges;
-		if (shard.ranges.length === 0) {
-			await this.deleteRangeShard(shard);
-		}
-		else {
-			await this.saveRangeShard(shard);
-		}
-		if (removedReferences.length > 0) {
-			await this.writeIndex();
-		}
-		await this.touchManifest();
-		return {
-			changed: true,
-			removedReferences,
-		};
+		return this.core.updateRangesForDocumentChanges(
+			previousText,
+			document.getText(),
+			key,
+			contentChanges.map((change) => ({
+				rangeOffset: change.rangeOffset,
+				rangeLength: change.rangeLength,
+				text: change.text,
+			})),
+		);
 	}
 
 	async duplicateFolderRanges(folderIdMap: Map<string, string>): Promise<DuplicateFolderRangesResult> {
-		return this.runRangeMutation(() => this.duplicateFolderRangesUnlocked(folderIdMap));
-	}
-
-	private async duplicateFolderRangesUnlocked(folderIdMap: Map<string, string>): Promise<DuplicateFolderRangesResult> {
-		const addedReferencesByFolderId = new Map<string, StoredRangeReference[]>();
-		if (folderIdMap.size === 0) {
-			return { addedReferencesByFolderId };
-		}
-
-		let changed = false;
-		for (const workspace of this.index.workspaces) {
-			for (const file of workspace.files) {
-				const shard = await this.loadRangeShard({ workspaceFolder: workspace.workspaceFolder, path: file.path });
-				const shardPath = shardRelativePath(shard);
-				const additions: StoredRange[] = [];
-				for (const storedRange of shard.ranges) {
-					const newFolderId = folderIdMap.get(storedRange.folderId);
-					if (!newFolderId) {
-						continue;
-					}
-					const duplicatedRange: StoredRange = {
-						...storedRange,
-						id: createId('rng'),
-						folderId: newFolderId,
-						range: {
-							start: { ...storedRange.range.start },
-							end: { ...storedRange.range.end },
-						},
-						comment: storedRange.comment,
-					};
-					additions.push(duplicatedRange);
-					const references = addedReferencesByFolderId.get(newFolderId) ?? [];
-					references.push({ id: duplicatedRange.id, shard: shardPath });
-					addedReferencesByFolderId.set(newFolderId, references);
-				}
-				if (additions.length === 0) {
-					continue;
-				}
-				shard.ranges.push(...additions);
-				await this.saveRangeShard(shard);
-				changed = true;
-			}
-		}
-
-		for (const [folderId, references] of addedReferencesByFolderId) {
-			await this.addFolderReferences(folderId, references);
-		}
-		if (changed) {
-			await this.writeIndex();
-			await this.touchManifest();
-		}
-		return { addedReferencesByFolderId };
+		return this.core.duplicateFolderRanges(folderIdMap);
 	}
 
 	async clearRangeCommentsForFolders(folderIds: Set<string>): Promise<boolean> {
-		return this.runRangeMutation(() => this.clearRangeCommentsForFoldersUnlocked(folderIds));
-	}
-
-	private async clearRangeCommentsForFoldersUnlocked(folderIds: Set<string>): Promise<boolean> {
-		if (folderIds.size === 0) {
-			return false;
-		}
-
-		let changed = false;
-		for (const workspace of this.index.workspaces) {
-			for (const file of workspace.files) {
-				const shard = await this.loadRangeShard({ workspaceFolder: workspace.workspaceFolder, path: file.path });
-				let shardChanged = false;
-				for (const storedRange of shard.ranges) {
-					if (!folderIds.has(storedRange.folderId) || !storedRange.comment) {
-						continue;
-					}
-					storedRange.comment = undefined;
-					shardChanged = true;
-					changed = true;
-				}
-				if (shardChanged) {
-					await this.saveRangeShard(shard);
-				}
-			}
-		}
-		if (changed) {
-			await this.touchManifest();
-		}
-		return changed;
+		return this.core.clearRangeCommentsForFolders(folderIds);
 	}
 
 	async removeDanglingReference(folderId: string, reference: StoredRangeReference): Promise<void> {
-		return this.runRangeMutation(() => this.removeDanglingReferenceUnlocked(folderId, reference));
-	}
-
-	private async removeDanglingReferenceUnlocked(folderId: string, reference: StoredRangeReference): Promise<void> {
-		const changed = await this.removeFolderReference(folderId, reference);
-		if (!changed) {
-			return;
-		}
-		await this.touchManifest();
+		return this.core.removeDanglingReference(folderId, reference);
 	}
 
 	async deleteRange(sourceFolderId: string, reference: StoredRangeReference): Promise<DeleteRangeResult> {
-		return this.runRangeMutation(() => this.deleteRangeUnlocked(sourceFolderId, reference));
-	}
-
-	private async deleteRangeUnlocked(sourceFolderId: string, reference: StoredRangeReference): Promise<DeleteRangeResult> {
-		const shard = await this.loadRangeShardByRelativePath(reference.shard);
-		if (!shard) {
-			const removedFromIndex = await this.removeFolderReference(sourceFolderId, reference);
-			if (removedFromIndex) {
-				await this.touchManifest();
-			}
-			return {
-				removed: removedFromIndex,
-				prunedDangling: true,
-			};
-		}
-
-		const storedRange = shard.ranges.find((item) => item.id === reference.id);
-		const actualFolderId = storedRange?.folderId;
-		const removedFromSource = await this.removeFolderReference(sourceFolderId, reference);
-		const removedFromActual = actualFolderId && actualFolderId !== sourceFolderId
-			? await this.removeFolderReference(actualFolderId, reference)
-			: false;
-
-		if (!storedRange) {
-			if (removedFromSource || removedFromActual) {
-				await this.touchManifest();
-			}
-			return {
-				removed: removedFromSource || removedFromActual,
-				prunedDangling: true,
-			};
-		}
-
-		shard.ranges = shard.ranges.filter((item) => item.id !== reference.id);
-		if (shard.ranges.length === 0) {
-			await this.deleteRangeShard(shard);
-		}
-		else {
-			await this.saveRangeShard(shard);
-		}
-		await this.writeIndex();
-		await this.touchManifest();
-		return {
-			removed: true,
-			prunedDangling: false,
-		};
+		return this.core.deleteRange(sourceFolderId, reference);
 	}
 
 	async moveRanges(requests: MoveRangeRequest[], targetFolderId: string): Promise<MoveRangeResult[]> {
-		return this.runRangeMutation(() => this.moveRangesUnlocked(requests, targetFolderId));
-	}
-
-	private async moveRangesUnlocked(requests: MoveRangeRequest[], targetFolderId: string): Promise<MoveRangeResult[]> {
-		const results: MoveRangeResult[] = [];
-		for (const request of requests) {
-			results.push(await this.moveRangeUnlocked(request.sourceFolderId, request.reference, targetFolderId));
-		}
-		return results;
-	}
-
-	private async moveRangeUnlocked(sourceFolderId: string, reference: StoredRangeReference, targetFolderId: string): Promise<MoveRangeResult> {
-		if (sourceFolderId === targetFolderId) {
-			return {
-				outcome: 'unchanged',
-				reference,
-			};
-		}
-
-		const shard = await this.loadRangeShardByRelativePath(reference.shard);
-		if (!shard) {
-			const removedFromIndex = await this.removeFolderReference(sourceFolderId, reference);
-			if (removedFromIndex) {
-				await this.touchManifest();
-			}
-			return { outcome: 'missing' };
-		}
-
-		const storedRange = shard.ranges.find((item) => item.id === reference.id);
-		if (!storedRange) {
-			const removedFromIndex = await this.removeFolderReference(sourceFolderId, reference);
-			if (removedFromIndex) {
-				await this.touchManifest();
-			}
-			return { outcome: 'missing' };
-		}
-
-		const actualSourceFolderId = storedRange.folderId;
-		const sourceReference = { id: storedRange.id, shard: reference.shard };
-		const removedFromRequested = await this.removeFolderReference(sourceFolderId, sourceReference);
-		const removedFromActual = actualSourceFolderId !== sourceFolderId
-			? await this.removeFolderReference(actualSourceFolderId, sourceReference)
-			: false;
-
-		if (actualSourceFolderId === targetFolderId) {
-			const addedToTarget = await this.addFolderReferences(targetFolderId, [sourceReference]);
-			if (removedFromRequested || removedFromActual || addedToTarget) {
-				await this.touchManifest();
-			}
-			return {
-				outcome: 'moved',
-				reference: sourceReference,
-			};
-		}
-
-		const duplicate = shard.ranges.find((item) =>
-			item.id !== storedRange.id
-			&& item.folderId === targetFolderId
-			&& sameRangeData(item.range, storedRange.range),
-		);
-		if (duplicate) {
-			shard.ranges = shard.ranges.filter((item) => item.id !== storedRange.id);
-			await this.addFolderReferences(targetFolderId, [{ id: duplicate.id, shard: reference.shard }]);
-			if (shard.ranges.length === 0) {
-				await this.deleteRangeShard(shard);
-			}
-			else {
-				await this.saveRangeShard(shard);
-			}
-			await this.writeIndex();
-			await this.touchManifest();
-			return {
-				outcome: 'deduplicated',
-				reference: {
-					id: duplicate.id,
-					shard: reference.shard,
-				},
-			};
-		}
-
-		storedRange.folderId = targetFolderId;
-		await this.addFolderReferences(targetFolderId, [sourceReference]);
-		await this.saveRangeShard(shard);
-		await this.writeIndex();
-		await this.touchManifest();
-		return {
-			outcome: 'moved',
-			reference: sourceReference,
-		};
+		return this.core.moveRanges(requests, targetFolderId);
 	}
 
 	async removeRangesForFolders(folderIds: Set<string>): Promise<void> {
-		return this.runRangeMutation(() => this.removeRangesForFoldersUnlocked(folderIds));
-	}
-
-	private async removeRangesForFoldersUnlocked(folderIds: Set<string>): Promise<void> {
-		if (folderIds.size === 0) {
-			return;
-		}
-
-		for (const folderId of folderIds) {
-			await this.deleteFolderRanges(folderId);
-		}
-
-		let changed = false;
-		for (const workspace of [...this.index.workspaces]) {
-			for (const file of [...workspace.files]) {
-				const shard = await this.loadRangeShard({ workspaceFolder: workspace.workspaceFolder, path: file.path });
-				const nextRanges = shard.ranges.filter((range) => !folderIds.has(range.folderId));
-				if (nextRanges.length === shard.ranges.length) {
-					continue;
-				}
-				changed = true;
-				shard.ranges = nextRanges;
-				if (shard.ranges.length === 0) {
-					await this.deleteRangeShard(shard);
-				}
-				else {
-					await this.saveRangeShard(shard);
-				}
-			}
-		}
-
-		if (changed) {
-			await this.writeIndex();
-		}
-		await this.touchManifest();
+		return this.core.removeRangesForFolders(folderIds);
 	}
 
 	async clearAll(): Promise<void> {
-		return this.runRangeMutation(() => this.clearAllUnlocked());
-	}
-
-	private async clearAllUnlocked(): Promise<void> {
-		try {
-			await vscode.workspace.fs.delete(this.storageRootUri(), { recursive: true });
-		}
-		catch (error) {
-			if (!isFileNotFoundError(error)) {
-				throw error;
-			}
-		}
-		this.index = emptyIndex();
-		this.rangeCache.clear();
-		this.rangeShardPathCache.clear();
-		this.folderRangesCache.clear();
-		await this.initialize();
+		return this.core.clearAll();
 	}
 
 	getWorkspaceRelativePath(uri: vscode.Uri): WorkspaceFileKey | undefined {
 		return this.keyForUri(uri);
 	}
 
-	private runRangeMutation<T>(operation: () => Promise<T>): Promise<T> {
-		const run = this.rangeMutationQueue.then(operation, operation);
-		this.rangeMutationQueue = run.then(() => undefined, () => undefined);
-		return run;
-	}
-
-	private async initialize(): Promise<void> {
-		await vscode.workspace.fs.createDirectory(this.storageRootUri());
-		await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.storageRootUri(), 'ranges'));
-		await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.storageRootUri(), 'indexes'));
-		await vscode.workspace.fs.createDirectory(this.folderRangesDirectoryUri());
-		await vscode.workspace.fs.createDirectory(this.folderDocsDirectoryUri());
-		await this.ensureSettings();
-		const manifest = await this.readJson<ManifestFile | undefined>(this.manifestUri(), undefined);
-		if (!manifest) {
-			await this.writeManifest(new Date().toISOString());
-		}
-		this.index = await this.readJson<FileIndex>(this.indexUri(), emptyIndex());
-		if (this.index.schemaVersion !== SCHEMA_VERSION || !Array.isArray(this.index.workspaces)) {
-			this.index = emptyIndex();
-			await this.writeIndex();
-		}
-	}
-
-	private async loadFolderReferencesIntoTree(folders: FolderItem[]): Promise<void> {
-		for (const folder of folders) {
-			folder.references = await this.loadFolderReferences(folder);
-			await this.loadFolderReferencesIntoTree(folder.children);
-		}
-	}
-
-	private async loadFolderReferences(folder: FolderItem): Promise<ReferenceItem[]> {
-		const index = await this.loadFolderRanges(folder.id);
-		const shardCache = new Map<string, RangeShardFile | undefined>();
-		const references: ReferenceItem[] = [];
-		const seen = new Set<string>();
-		let changed = false;
-
-		for (const reference of index.ranges) {
-			const identity = referenceKey(reference);
-			if (seen.has(identity)) {
-				changed = true;
-				continue;
-			}
-			seen.add(identity);
-
-			let shard = shardCache.get(reference.shard);
-			if (shard === undefined && !shardCache.has(reference.shard)) {
-				shard = await this.loadRangeShardByRelativePath(reference.shard);
-				shardCache.set(reference.shard, shard);
-			}
-			if (!shard || !shard.ranges.some((item) => item.id === reference.id)) {
-				changed = true;
-				continue;
-			}
-
-			references.push(createReferenceItem({ ...reference, parent: folder }));
-		}
-
-		if (changed) {
-			index.ranges = references.map(({ id, shard }) => ({ id, shard }));
-			await this.saveFolderRanges(index);
-		}
-		return references;
-	}
-
-	private async addFolderReferences(folderId: string, references: StoredRangeReference[]): Promise<boolean> {
-		if (references.length === 0) {
-			return false;
-		}
-		const index = await this.loadFolderRanges(folderId);
-		const seen = new Set(index.ranges.map(referenceKey));
-		let changed = false;
-		for (const reference of references) {
-			const identity = referenceKey(reference);
-			if (seen.has(identity)) {
-				continue;
-			}
-			index.ranges.push(reference);
-			seen.add(identity);
-			changed = true;
-		}
-		if (!changed) {
-			return false;
-		}
-		await this.saveFolderRanges(index);
-		return true;
-	}
-
-	private async loadFolderRanges(folderId: string): Promise<FolderRangesFile> {
-		const cached = this.folderRangesCache.get(folderId);
-		if (cached) {
-			return cloneFolderRanges(cached);
-		}
-
-		const ranges = await this.readJson<FolderRangesFile>(this.folderRangesUri(folderId), emptyFolderRanges(folderId));
-		if (ranges.schemaVersion !== SCHEMA_VERSION || ranges.folderId !== folderId || !Array.isArray(ranges.ranges)) {
-			const empty = emptyFolderRanges(folderId);
-			this.folderRangesCache.set(folderId, empty);
-			return cloneFolderRanges(empty);
-		}
-		this.folderRangesCache.set(folderId, ranges);
-		return cloneFolderRanges(ranges);
-	}
-
-	private async saveFolderRanges(ranges: FolderRangesFile): Promise<void> {
-		this.folderRangesCache.set(ranges.folderId, cloneFolderRanges(ranges));
-		if (ranges.ranges.length === 0) {
-			await this.deleteIfExists(this.folderRangesUri(ranges.folderId));
-			return;
-		}
-		await this.writeJson(this.folderRangesUri(ranges.folderId), ranges);
-	}
-
-	private async deleteFolderRanges(folderId: string): Promise<void> {
-		this.folderRangesCache.delete(folderId);
-		await this.deleteIfExists(this.folderRangesUri(folderId));
-	}
-
-	private async removeFolderReference(folderId: string, reference: StoredRangeReference): Promise<boolean> {
-		const index = await this.loadFolderRanges(folderId);
-		const nextRanges = index.ranges.filter((item) => !sameStoredRangeReference(item, reference));
-		if (nextRanges.length === index.ranges.length) {
-			return false;
-		}
-		index.ranges = nextRanges;
-		await this.saveFolderRanges(index);
-		return true;
-	}
-
 	private keyForUri(uri: vscode.Uri): WorkspaceFileKey | undefined {
-		const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-		if (!workspaceFolder) {
+		if (uri.scheme !== 'file') {
 			return undefined;
 		}
-		const path = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/');
-		return {
-			workspaceFolder: workspaceFolder.name,
-			path,
-		};
+		return this.core.keyForAbsolutePath(uri.fsPath);
 	}
-
-	private workspaceFileUri(workspaceFolderName: string, relativePath: string): vscode.Uri | undefined {
-		const workspaceFolder = vscode.workspace.workspaceFolders?.find((folder) => folder.name === workspaceFolderName);
-		if (!workspaceFolder) {
-			return undefined;
-		}
-		return vscode.Uri.joinPath(workspaceFolder.uri, ...relativePath.split('/'));
-	}
-
-	private async loadRangeShard(key: WorkspaceFileKey): Promise<RangeShardFile> {
-		const cacheKey = fileCacheKey(key);
-		const cached = this.rangeCache.get(cacheKey);
-		if (cached) {
-			return cached;
-		}
-
-		const indexEntry = this.findIndexEntry(key);
-		const emptyShard: RangeShardFile = {
-			schemaVersion: SCHEMA_VERSION,
-			workspaceFolder: key.workspaceFolder,
-			path: key.path,
-			ranges: [],
-		};
-		if (!indexEntry) {
-			this.rangeCache.set(cacheKey, emptyShard);
-			return emptyShard;
-		}
-
-		const shard = await this.loadRangeShardByRelativePath(indexEntry.shard);
-		if (!shard) {
-			this.removeIndexEntry(key);
-			await this.writeIndex();
-			this.rangeCache.set(cacheKey, emptyShard);
-			return emptyShard;
-		}
-		return shard;
-	}
-
-	private async loadRangeShardByRelativePath(shardPath: string): Promise<RangeShardFile | undefined> {
-		const cached = this.rangeShardPathCache.get(shardPath);
-		if (cached) {
-			return cached;
-		}
-
-		const shard = await this.readJson<RangeShardFile | undefined>(this.relativeUri(shardPath), undefined);
-		if (!shard) {
-			return undefined;
-		}
-		if (shard.schemaVersion !== SCHEMA_VERSION || !Array.isArray(shard.ranges)) {
-			throw new Error(`Unsupported range shard schema for ${shardPath}.`);
-		}
-		this.rangeShardPathCache.set(shardPath, shard);
-		this.rangeCache.set(fileCacheKey(shard), shard);
-		return shard;
-	}
-
-	private async saveRangeShard(shard: RangeShardFile): Promise<void> {
-		const shardPath = shardRelativePath({ workspaceFolder: shard.workspaceFolder, path: shard.path });
-		await this.writeJson(this.relativeUri(shardPath), shard);
-		this.rangeCache.set(fileCacheKey(shard), shard);
-		this.rangeShardPathCache.set(shardPath, shard);
-		this.upsertIndexEntry(shard, shardPath);
-	}
-
-	private async deleteRangeShard(shard: RangeShardFile): Promise<void> {
-		const entry = this.findIndexEntry(shard);
-		if (entry) {
-			await this.deleteIfExists(this.relativeUri(entry.shard));
-			this.rangeShardPathCache.delete(entry.shard);
-		}
-		this.rangeCache.delete(fileCacheKey(shard));
-		this.removeIndexEntry(shard);
-	}
-
-	private upsertIndexEntry(shard: RangeShardFile, shardPath: string): void {
-		let workspace = this.index.workspaces.find((item) => item.workspaceFolder === shard.workspaceFolder);
-		if (!workspace) {
-			workspace = { workspaceFolder: shard.workspaceFolder, files: [] };
-			this.index.workspaces.push(workspace);
-		}
-		let file = workspace.files.find((item) => item.path === shard.path);
-		if (!file) {
-			file = { path: shard.path, shard: shardPath, rangeCount: 0, folderCounts: {} };
-			workspace.files.push(file);
-		}
-		file.shard = shardPath;
-		file.rangeCount = shard.ranges.length;
-		file.folderCounts = countByFolder(shard.ranges);
-		workspace.files.sort((a, b) => a.path.localeCompare(b.path));
-	}
-
-	private removeIndexEntry(key: WorkspaceFileKey): void {
-		const workspace = this.index.workspaces.find((item) => item.workspaceFolder === key.workspaceFolder);
-		if (!workspace) {
-			return;
-		}
-		workspace.files = workspace.files.filter((item) => item.path !== key.path);
-		if (workspace.files.length === 0) {
-			this.index.workspaces = this.index.workspaces.filter((item) => item !== workspace);
-		}
-	}
-
-	private findIndexEntry(key: WorkspaceFileKey): FileIndexEntry | undefined {
-		return this.index.workspaces
-			.find((workspace) => workspace.workspaceFolder === key.workspaceFolder)
-			?.files.find((file) => file.path === key.path);
-	}
-
-	private async writeIndex(): Promise<void> {
-		this.index.updatedAt = new Date().toISOString();
-		this.index.workspaces.sort((a, b) => a.workspaceFolder.localeCompare(b.workspaceFolder));
-		await this.writeJson(this.indexUri(), this.index);
-	}
-
-	private async touchManifest(): Promise<void> {
-		const manifest = await this.readJson<ManifestFile | undefined>(this.manifestUri(), undefined);
-		await this.writeManifest(manifest?.createdAt ?? new Date().toISOString());
-	}
-
-	private async writeManifest(createdAt: string): Promise<void> {
-		await this.writeJson(this.manifestUri(), {
-			schemaVersion: SCHEMA_VERSION,
-			createdAt,
-			updatedAt: new Date().toISOString(),
-			storageWorkspace: this.storageLocationLabel,
-			workspaces: this.workspaces,
-		});
-	}
-
-	private async ensureSettings(): Promise<void> {
-		const fallback: SettingsFile = {
-			schemaVersion: SCHEMA_VERSION,
-			defaultFolderColor: DEFAULT_FOLDER_COLOR,
-		};
-		if (!await exists(this.settingsUri())) {
-			await this.writeSettings(fallback);
-			return;
-		}
-		const settings = await this.readJson<SettingsFile>(this.settingsUri(), fallback);
-		if (settings.schemaVersion !== SCHEMA_VERSION || !isValidHexColor(settings.defaultFolderColor)) {
-			await this.writeSettings(fallback);
-		}
-	}
-
-	private async loadSettings(): Promise<SettingsFile> {
-		const settings = await this.readJson<SettingsFile>(this.settingsUri(), {
-			schemaVersion: SCHEMA_VERSION,
-			defaultFolderColor: DEFAULT_FOLDER_COLOR,
-		});
-		if (settings.schemaVersion !== SCHEMA_VERSION || !isValidHexColor(settings.defaultFolderColor)) {
-			return {
-				schemaVersion: SCHEMA_VERSION,
-				defaultFolderColor: DEFAULT_FOLDER_COLOR,
-			};
-		}
-		return settings;
-	}
-
-	private async writeSettings(settings: SettingsFile): Promise<void> {
-		await this.writeJson(this.settingsUri(), settings);
-	}
-
-	private async readJson<T>(uri: vscode.Uri, fallback: T): Promise<T> {
-		try {
-			const bytes = await vscode.workspace.fs.readFile(uri);
-			return JSON.parse(new TextDecoder().decode(bytes)) as T;
-		}
-		catch (error) {
-			if (isFileNotFoundError(error)) {
-				return fallback;
-			}
-			throw error;
-		}
-	}
-
-	private async writeJson(uri: vscode.Uri, data: unknown): Promise<void> {
-		await vscode.workspace.fs.createDirectory(parentUri(uri));
-		await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(JSON.stringify(data, null, 2) + '\n'));
-	}
-
-	private async writeFile(uri: vscode.Uri, contents: string): Promise<void> {
-		await vscode.workspace.fs.createDirectory(parentUri(uri));
-		await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(contents));
-	}
-
-	private async deleteIfExists(uri: vscode.Uri): Promise<void> {
-		try {
-			await vscode.workspace.fs.delete(uri);
-		}
-		catch (error) {
-			if (!isFileNotFoundError(error)) {
-				throw error;
-			}
-		}
-	}
-
-	private storageRootUri(): vscode.Uri {
-		return this.storageLocation;
-	}
-
-	private manifestUri(): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageRootUri(), MANIFEST_FILE);
-	}
-
-	private foldersUri(): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageRootUri(), FOLDERS_FILE);
-	}
-
-	private searchesUri(): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageRootUri(), SEARCHES_FILE);
-	}
-
-	private uiUri(): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageRootUri(), UI_FILE);
-	}
-
-	private settingsUri(): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageRootUri(), SETTINGS_FILE);
-	}
-
-	private indexUri(): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageRootUri(), FILES_INDEX);
-	}
-
-	private folderRangesDirectoryUri(): vscode.Uri {
-		return this.relativeUri(FOLDER_RANGES_DIRECTORY);
-	}
-
-	private folderDocsDirectoryUri(): vscode.Uri {
-		return this.relativeUri(DOCS_DIRECTORY);
-	}
-
-	private folderRangesUri(folderId: string): vscode.Uri {
-		return this.relativeUri(folderRangesRelativePath(folderId));
-	}
-
-	private folderDocUri(folderId: string): vscode.Uri {
-		return this.relativeUri(`${DOCS_DIRECTORY}/${folderId}.md`);
-	}
-
-	private rootDocUri(): vscode.Uri {
-		return this.relativeUri(`${DOCS_DIRECTORY}/root.md`);
-	}
-
-	private relativeUri(relativePath: string): vscode.Uri {
-		return vscode.Uri.joinPath(this.storageRootUri(), ...relativePath.split('/'));
-	}
-}
-
-function serializeFolder(folder: FolderItem): FolderData {
-	const data: FolderData = {
-		id: folder.id,
-		name: folder.name,
-		children: folder.children.map(serializeFolder),
-		isHidden: folder.isHidden,
-	};
-	if (folder.color) {
-		data.color = folder.color;
-	}
-	if (folder.inheritsColor) {
-		data.inheritsColor = true;
-	}
-	if (folder.expanded !== undefined) {
-		data.expanded = folder.expanded;
-	}
-	return data;
-}
-
-function deserializeFolder(data: FolderData, parent?: FolderItem): FolderItem {
-	const folder = createFolderItem({
-		id: data.id,
-		name: data.name,
-		color: data.color,
-		inheritsColor: data.inheritsColor ?? false,
-		children: [],
-		references: [],
-		isHidden: data.isHidden ?? false,
-		expanded: data.expanded,
-		parent,
-	});
-	folder.children = data.children.map((child) => deserializeFolder(child, folder));
-	return folder;
 }
 
 async function chooseStorageLocation(
@@ -1373,8 +361,8 @@ function defaultWorkspaceStorageRoot(workspaceUri: vscode.Uri): vscode.Uri {
 }
 
 async function isStorageRoot(uri: vscode.Uri): Promise<boolean> {
-	return await exists(vscode.Uri.joinPath(uri, MANIFEST_FILE))
-		|| await exists(vscode.Uri.joinPath(uri, FOLDERS_FILE));
+	return await exists(vscode.Uri.joinPath(uri, 'manifest.json'))
+		|| await exists(vscode.Uri.joinPath(uri, 'folders.json'));
 }
 
 function findDuplicateNames(workspaceFolders: readonly vscode.WorkspaceFolder[]): string[] {
@@ -1399,166 +387,13 @@ async function exists(uri: vscode.Uri): Promise<boolean> {
 	}
 }
 
-function emptyIndex(): FileIndex {
+function toResolvedReference(resolved: CoreResolvedReference): ResolvedReference {
 	return {
-		schemaVersion: SCHEMA_VERSION,
-		updatedAt: new Date().toISOString(),
-		workspaces: [],
+		location: new vscode.Location(vscode.Uri.file(resolved.absolutePath), rangeFromData(resolved.storedRange.range)),
+		storedRange: resolved.storedRange,
 	};
-}
-
-function emptyFolderRanges(folderId: string): FolderRangesFile {
-	return {
-		schemaVersion: SCHEMA_VERSION,
-		folderId,
-		ranges: [],
-	};
-}
-
-function cloneFolderRanges(ranges: FolderRangesFile): FolderRangesFile {
-	return {
-		...ranges,
-		ranges: [...ranges.ranges],
-	};
-}
-
-function fileCacheKey(key: WorkspaceFileKey): string {
-	return `${key.workspaceFolder}\0${key.path}`;
-}
-
-function shardRelativePath(key: WorkspaceFileKey): string {
-	const digest = crypto.createHash('sha1').update(fileCacheKey(key)).digest('hex');
-	return `ranges/${encodeURIComponent(key.workspaceFolder)}/${digest.slice(0, 2)}/${digest}.json`;
-}
-
-function folderRangesRelativePath(folderId: string): string {
-	const digest = crypto.createHash('sha1').update(folderId).digest('hex');
-	return `${FOLDER_RANGES_DIRECTORY}/${digest.slice(0, 2)}/${digest}.json`;
-}
-
-function countByFolder(ranges: StoredRange[]): Record<string, number> {
-	const counts: Record<string, number> = {};
-	for (const range of ranges) {
-		counts[range.folderId] = (counts[range.folderId] ?? 0) + 1;
-	}
-	return counts;
-}
-
-function rangeIdentity(range: Pick<StoredRange, 'folderId' | 'range'>): string {
-	return [
-		range.folderId,
-		range.range.start.line,
-		range.range.start.character,
-		range.range.end.line,
-		range.range.end.character,
-	].join(':');
-}
-
-function sameRangeData(left: StoredRange['range'], right: StoredRange['range']): boolean {
-	return left.start.line === right.start.line
-		&& left.start.character === right.start.character
-		&& left.end.line === right.end.line
-		&& left.end.character === right.end.character;
-}
-
-function transformStoredRange(
-	previousText: string,
-	previousLineOffsets: number[],
-	document: vscode.TextDocument,
-	storedRange: StoredRange,
-	contentChanges: readonly vscode.TextDocumentContentChangeEvent[],
-): StoredRange | undefined {
-	let startOffset = offsetAtInText(previousText, previousLineOffsets, storedRange.range.start);
-	let endOffset = offsetAtInText(previousText, previousLineOffsets, storedRange.range.end);
-
-	for (const change of contentChanges) {
-		const changeStart = change.rangeOffset;
-		const changeEnd = change.rangeOffset + change.rangeLength;
-		const insertedLength = change.text.length;
-		if (change.rangeLength === 0) {
-			if (changeStart <= startOffset) {
-				startOffset += insertedLength;
-				endOffset += insertedLength;
-			}
-			else if (changeStart < endOffset) {
-				endOffset += insertedLength;
-			}
-			continue;
-		}
-
-		const delta = insertedLength - change.rangeLength;
-		startOffset = transformRangeStartOffset(startOffset, changeStart, changeEnd, delta);
-		endOffset = transformRangeEndOffset(endOffset, changeStart, changeEnd, delta, insertedLength);
-	}
-
-	startOffset = Math.max(0, Math.min(startOffset, document.getText().length));
-	endOffset = Math.max(startOffset, Math.min(endOffset, document.getText().length));
-	if (startOffset === endOffset) {
-		return undefined;
-	}
-
-	return {
-		...storedRange,
-		range: rangeToData(new vscode.Range(document.positionAt(startOffset), document.positionAt(endOffset))),
-	};
-}
-
-function transformRangeStartOffset(offset: number, changeStart: number, changeEnd: number, delta: number): number {
-	if (offset < changeStart) {
-		return offset;
-	}
-	if (offset >= changeEnd) {
-		return offset + delta;
-	}
-	return changeStart;
-}
-
-function transformRangeEndOffset(
-	offset: number,
-	changeStart: number,
-	changeEnd: number,
-	delta: number,
-	insertedLength: number,
-): number {
-	if (offset <= changeStart) {
-		return offset;
-	}
-	if (offset >= changeEnd) {
-		return offset + delta;
-	}
-	return changeStart + insertedLength;
-}
-
-function parentUri(uri: vscode.Uri): vscode.Uri {
-	const parentPath = uri.path.replace(/\/[^/]*$/, '') || '/';
-	return uri.with({ path: parentPath });
-}
-
-function computeLineOffsets(text: string): number[] {
-	const offsets = [0];
-	for (let index = 0; index < text.length; index += 1) {
-		if (text.charCodeAt(index) === 10) {
-			offsets.push(index + 1);
-		}
-	}
-	return offsets;
-}
-
-function offsetAtInText(text: string, lineOffsets: number[], position: PositionData): number {
-	const line = Math.max(0, Math.min(position.line, lineOffsets.length - 1));
-	const lineStart = lineOffsets[line];
-	const lineEnd = line + 1 < lineOffsets.length ? lineOffsets[line + 1] - 1 : text.length;
-	return Math.max(lineStart, Math.min(lineStart + position.character, lineEnd));
-}
-
-function isFileNotFoundError(error: unknown): boolean {
-	return error instanceof vscode.FileSystemError && error.code === 'FileNotFound';
 }
 
 function isStorageLocationErrorRecoverable(error: unknown): boolean {
-	return error instanceof vscode.FileSystemError;
-}
-
-function isValidHexColor(value: string): boolean {
-	return /^#[0-9A-Fa-f]{6}$/.test(value);
+	return error instanceof Error;
 }

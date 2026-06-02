@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "createdAt": "2026-06-02T21:40:30.362Z",
+  "updatedAt": "2026-06-02T21:42:14.354Z",
+  "storageWorkspace": "/home/bar/dev/projects/powersearch/p2",
+  "workspaces": [
+    {
+      "id": "powersearch",
+      "name": "powersearch"
+    }
+  ]
+}

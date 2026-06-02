@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "workspaceFolder": "powersearch",
+  "path": "README.md",
+  "ranges": [
+    {
+      "id": "rng_7ca55a4b20ab494da465f24483949dea",
+      "folderId": "fld_4933af747b9a4e63aa2f91b58e9aa69c",
+      "range": {
+        "start": {
+          "line": 47,
+          "character": 17
+        },
+        "end": {
+          "line": 47,
+          "character": 29
+        }
+      }
+    },
+    {
+      "id": "rng_d0f474b2d9834fe897cb754731b04ebf",
+      "folderId": "fld_4933af747b9a4e63aa2f91b58e9aa69c",
+      "range": {
+        "start": {
+          "line": 50,
+          "character": 0
+        },
+        "end": {
+          "line": 50,
+          "character": 3
+        }
+      }
+    },
+    {
+      "id": "rng_0785f4f44ed24d4ea3a6cf9262be6cce",
+      "folderId": "fld_f0094111bd504eb586a325ed5becc1c8",
+      "range": {
+        "start": {
+          "line": 51,
+          "character": 0
+        },
+        "end": {
+          "line": 51,
+          "character": 3
+        }
+      }
+    }
+  ]
+}

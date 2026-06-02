@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 2,
+  "folderId": "fld_4933af747b9a4e63aa2f91b58e9aa69c",
+  "ranges": [
+    {
+      "id": "rng_7ca55a4b20ab494da465f24483949dea",
+      "shard": "ranges/powersearch/7c/7c4244749389ba8eb05f969e01890ff5f5491b2c.json"
+    },
+    {
+      "id": "rng_d0f474b2d9834fe897cb754731b04ebf",
+      "shard": "ranges/powersearch/7c/7c4244749389ba8eb05f969e01890ff5f5491b2c.json"
+    }
+  ]
+}

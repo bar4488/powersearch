@@ -2,6 +2,8 @@
 
 PowerSearch stores all durable data in a visible `.powersearch` folder. The format is designed for large numbers of ranges: startup loads small metadata files, folder trees load lightweight reference indexes, and full range payloads stay sharded by workspace folder and source file.
 
+For the proposed service-based runtime, `local.json`, and `.powersearch/runtime/` metadata, see `docs/powersearch-service-architecture.md`.
+
 No current-format file stores absolute workspace paths or absolute source-file paths. Source locations are represented by a VS Code workspace-folder name plus a relative file path.
 
 ## Directory Layout
