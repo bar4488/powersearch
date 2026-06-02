@@ -1,53 +1,59 @@
 # PowerSearch
 
-PowerSearch is a VS Code extension for grouping and coloring source ranges. It stores workspace-visible state in `.powersearch` using a sharded format designed for large numbers of ranges, with lightweight per-folder range indexes for the tree and per-file shards for the actual range payload.
+PowerSearch is a VS Code extension for collecting, coloring, and organizing code ranges into folders. It keeps the UI lightweight and stores its state in a workspace-visible `.powersearch` directory built for large sets of saved ranges.
 
-## Current UX
+## What It Does
 
-- The PowerSearch side bar has two stacked views: **Folders** and **Search**.
-- **Folders** stays focused on the folder tree and acts as the root action surface for folder-wide actions such as creating folders, setting the shared default color, toggling shared visibility, opening root notes, or clearing the current target.
-- Pick a **target folder** before coloring selections or lines. Right-click a folder to set it as the target, and right-click the current target to clear it.
-- Left-click a folder to open its notes. The status bar plus tree badge show which folder is the current target.
-- Drag one or many stored ranges onto another folder to move them. Each range row also has an inline delete button, and both actions keep the tree index and file shard storage in sync.
-- Range comments are stored on the range itself. Right-click a range or run **PowerSearch: Edit Range Comment** with the cursor inside a visible decorated range to show a colored inline `// comment` hint without editing the source file.
-- Stored ranges now follow ordinary text edits in their file. If an edit fully removes a range, PowerSearch drops that range instead of leaving a stale entry behind.
-- Run **PowerSearch: Reveal Current Range** to jump the Folders view to the visible decorated range under the cursor.
-- Folder colors can be explicit, cleared, or set to **Parent** so a folder inherits the nearest colored ancestor, including the synthetic root's default color.
-- Right-click a folder to duplicate it under the same parent with a new name. The duplicate copies the subtree and stored ranges, starts hidden, and does not copy folder notes.
-- Folder context menus also support bulk cleanup: remove color, remove color recursively, remove all range comments, and remove all range comments recursively.
-- Hiding the synthetic root suppresses all descendant decorations until it is shown again.
-- Folder notes are Markdown files stored in `.powersearch/docs/` and opened by clicking the folder or from the folder context menu. The synthetic root uses `.powersearch/docs/root.md`.
-- **Search** is a dedicated search view with inline inputs instead of step-by-step dialogs: search text, in-field match toggles, button-based scope selection, workspace selection, include/exclude globs, and results all live in one surface.
-- After a search runs, you can open matches directly or save the results into any existing folder as normal ranges.
+- Save a line, selection, symbol, or search result into a folder.
+- Color ranges in the editor and inherit colors through the folder tree.
+- Keep notes per folder without touching source files.
+- Move, duplicate, reveal, comment, or clean up saved ranges from the side bar.
+
+## UX At A Glance
+
+PowerSearch lives in two side-bar views: **Folders** and **Search**.
+
+- **Folders** is where you organize ranges, set the current target folder, manage visibility, and open folder notes.
+- **Search** is where you run scoped searches and save matches straight into a folder.
+- Saved ranges track normal text edits. If the underlying text disappears, the range is removed instead of going stale.
 
 ## Development
 
-Install dependencies:
+Install dependencies and run the standard checks:
 
 ```sh
 npm ci
-```
-
-Run checks:
-
-```sh
 npm run compile
 npm run lint
 npm test
 ```
 
-## Run The Extension From The CLI
+## Run Locally
 
-Compile the extension and open VS Code with this checkout loaded as the development extension:
+Compile the extension and launch a new VS Code window with this repo loaded as the development extension:
 
 ```sh
 npm run compile
 code --new-window --extensionDevelopmentPath="$PWD" "$PWD"
 ```
 
-From outside the repo, use absolute paths:
+From outside the repo, use absolute paths for both the extension and the workspace:
 
 ```sh
-npm run compile
 code --new-window --extensionDevelopmentPath=/path/to/powersearch /path/to/workspace
+```
+
+## Build A VSIX
+
+Create a distributable `.vsix` package with `vsce`:
+
+```sh
+npm ci
+npm exec --package @vscode/vsce -- vsce package
+```
+
+That writes a file like `powersearch-0.0.3.vsix` in the project root. Install it in VS Code with:
+
+```sh
+code --install-extension powersearch-0.0.3.vsix
 ```

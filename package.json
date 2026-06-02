@@ -2,7 +2,12 @@
   "name": "powersearch",
   "displayName": "PowerSearch",
   "description": "",
-  "version": "0.0.1",
+  "version": "0.0.3",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:bar4488/powersearch.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
